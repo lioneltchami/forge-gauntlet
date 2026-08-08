@@ -45,10 +45,11 @@ function resolveBar(
     if (!bar) throw new Error("Unknown bar id");
     return bar;
   }
-  if (/^https?:\/\//i.test(barOpt)) {
+  if (/^(https?:|data:)/i.test(barOpt)) {
     return {
       id: "custom",
-      name: barName ?? barOpt,
+      name:
+        barName ?? (barOpt.startsWith("data:") ? "Inline reference" : barOpt),
       url: barOpt,
     };
   }
@@ -361,7 +362,11 @@ program
 program
   .command("doctor")
   .description("Check CLIs, keys, and Playwright readiness for testing")
-  .action(async () => {
+  .option(
+    "--strict",
+    "Exit non-zero when neither agent CLI nor OPENROUTER_API_KEY is available",
+  )
+  .action(async (opts: { strict?: boolean }) => {
     const { detectAgents } = await import("../adapters/spawn.js");
     const agents = await detectAgents();
     const report = {
@@ -370,7 +375,9 @@ program
       OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? "set" : "missing",
       GAUNTLET_WEB_TOKEN: process.env.GAUNTLET_WEB_TOKEN
         ? "set"
-        : "optional/unset",
+        : "optional/unset (need GAUNTLET_WEB_ALLOW_ANON=1 for open local web)",
+      GAUNTLET_WEB_ALLOW_ANON:
+        process.env.GAUNTLET_WEB_ALLOW_ANON === "1" ? "yes" : "no",
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY
         ? "set"
         : "missing (checkout placeholder)",
@@ -384,13 +391,14 @@ program
         "Spawn: gauntlet run --spawn-agent --spawn-dry  (safe) or --spawn-agent (live tokens)",
         "Compare: gauntlet compare a.png b.png --grid 6",
         "Web auth: export GAUNTLET_WEB_TOKEN=… and send Authorization: Bearer …",
+        "Canary: npm run canary   | live: GAUNTLET_LIVE_CANARY=1 npm run canary -- --live",
       ],
     };
     console.log(JSON.stringify(report, null, 2));
     const ready =
       Boolean(agents.claude || agents.codex) ||
       Boolean(process.env.OPENROUTER_API_KEY);
-    process.exit(ready ? 0 : 1);
+    if (opts.strict && !ready) process.exit(1);
   });
 
 program

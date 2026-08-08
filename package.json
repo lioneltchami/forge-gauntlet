@@ -10,7 +10,9 @@
     "build": "tsc",
     "dev": "tsx cli/gauntlet.ts",
     "gauntlet": "tsx cli/gauntlet.ts",
-    "test": "tsx --test runtime/**/*.test.ts adapters/**/*.test.ts web/**/*.test.ts",
+    "test": "tsx --test runtime/**/*.test.ts adapters/**/*.test.ts web/**/*.test.ts cli/**/*.test.ts",
+    "canary": "tsx scripts/canary.ts",
+    "ci": "npm run build && npm test && npm run canary && npm audit --audit-level=high",
     "web": "tsx web/server.ts",
     "demo": "tsx cli/gauntlet.ts demo"
   },

@@ -72,16 +72,21 @@ Triggers: `/gauntlet`, “beat this bar”, “compose gauntlet”.
 ## Test checklist (you)
 
 ```bash
+npm test                 # unit + web + CLI integration
+npm run canary           # dry offline canary (no token spend)
+npm run ci               # build + test + canary + audit
 npm run gauntlet -- doctor
 npm run demo
 npm run gauntlet -- run --goal "…" --bar https://example.com --bar-name example.com --spawn-agent --spawn-dry --max-rounds 2
-# Live tokens (costs money):
-#   export OPENROUTER_API_KEY=…
+# Live tokens (costs money — explicit opt-in):
+#   GAUNTLET_LIVE_CANARY=1 OPENROUTER_API_KEY=… npm run canary -- --live
 #   npm run gauntlet -- run … --vision-critic
 #   npm run gauntlet -- run … --spawn-agent --agent claude-code
 npm run gauntlet -- compare a.png b.png --grid 6
-npm run web   # http://localhost:8787
+GAUNTLET_WEB_ALLOW_ANON=1 npm run web   # http://127.0.0.1:8787
 ```
+
+CI: `.github/workflows/ci.yml` runs build, tests, dry canary, and `npm audit`.
 
 Optional: `.env` from `.env.example` (`OPENROUTER_API_KEY`, `GAUNTLET_WEB_TOKEN`, `STRIPE_*`).
 

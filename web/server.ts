@@ -43,7 +43,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = resolveBindHost();
 const CWD = process.env.GAUNTLET_CWD ?? process.cwd();
-const BUDGET_FILE = path.join(CWD, "web", ".data", "budgets.json");
 
 export type Plan = "free" | "pro";
 export type RunBudget = {
@@ -53,41 +52,46 @@ export type RunBudget = {
   day: string;
 };
 
-async function loadBudgets(): Promise<Record<string, RunBudget>> {
+function budgetFile(cwd: string) {
+  return path.join(cwd, "web", ".data", "budgets.json");
+}
+
+async function loadBudgets(cwd: string): Promise<Record<string, RunBudget>> {
   try {
-    return JSON.parse(await readFile(BUDGET_FILE, "utf8"));
+    return JSON.parse(await readFile(budgetFile(cwd), "utf8"));
   } catch {
     return {};
   }
 }
 
-async function saveBudgets(data: Record<string, RunBudget>) {
-  await mkdir(path.dirname(BUDGET_FILE), { recursive: true });
-  await writeFile(BUDGET_FILE, JSON.stringify(data, null, 2) + "\n", "utf8");
+async function saveBudgets(cwd: string, data: Record<string, RunBudget>) {
+  const file = budgetFile(cwd);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify(data, null, 2) + "\n", "utf8");
 }
 
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function getBudget(userId: string): Promise<RunBudget> {
-  const all = await loadBudgets();
+async function getBudget(cwd: string, userId: string): Promise<RunBudget> {
+  const all = await loadBudgets(cwd);
   const day = today();
   let b = all[userId];
   if (!b || b.day !== day) {
     b = { plan: "free", runsUsedToday: 0, dailyLimit: 3, day };
     all[userId] = b;
-    await saveBudgets(all);
+    await saveBudgets(cwd, all);
   }
   return b;
 }
 
-async function bumpBudget(userId: string) {
-  const all = await loadBudgets();
-  const b = await getBudget(userId);
+async function bumpBudget(cwd: string, userId: string) {
+  const all = await loadBudgets(cwd);
+  const b = await getBudget(cwd, userId);
   b.runsUsedToday += 1;
   all[userId] = b;
-  await saveBudgets(all);
+  await saveBudgets(cwd, all);
   return b;
 }
 
@@ -169,7 +173,7 @@ export async function handleWebRequest(
     }
 
     if (req.method === "GET" && url.pathname === "/api/budget") {
-      json(req, res, 200, await getBudget(userId));
+      json(req, res, 200, await getBudget(cwd, userId));
       return;
     }
 
@@ -214,7 +218,7 @@ export async function handleWebRequest(
     }
 
     if (req.method === "POST" && url.pathname === "/api/runs") {
-      const budget = await getBudget(userId);
+      const budget = await getBudget(cwd, userId);
       if (budget.plan === "free" && budget.runsUsedToday >= budget.dailyLimit) {
         return json(req, res, 402, {
           error: "Daily free run budget exhausted. Pro unlocks more runs.",
@@ -253,7 +257,7 @@ export async function handleWebRequest(
         });
       }
 
-      const b = await bumpBudget(userId);
+      const b = await bumpBudget(cwd, userId);
 
       if (body.composeOnly) {
         return json(req, res, 201, {
@@ -372,12 +376,12 @@ export async function handleWebRequest(
             error: "Webhook missing authenticated client_reference_id",
           });
         }
-        const all = await loadBudgets();
-        const b = await getBudget(uid);
+        const all = await loadBudgets(cwd);
+        const b = await getBudget(cwd, uid);
         b.plan = upgrade.plan;
         b.dailyLimit = 100;
         all[uid] = b;
-        await saveBudgets(all);
+        await saveBudgets(cwd, all);
       }
       json(req, res, 200, { received: true });
       return;

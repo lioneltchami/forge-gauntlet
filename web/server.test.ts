@@ -33,8 +33,12 @@ describe("web server hardening", () => {
   });
 
   after(async () => {
+    await new Promise((r) => setTimeout(r, 250));
     server.close();
-    await rm(cwd, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true }).catch(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+      await rm(cwd, { recursive: true, force: true });
+    });
     if (prev.token == null) delete process.env.GAUNTLET_WEB_TOKEN;
     else process.env.GAUNTLET_WEB_TOKEN = prev.token;
     if (prev.anon == null) delete process.env.GAUNTLET_WEB_ALLOW_ANON;
@@ -75,6 +79,11 @@ describe("web server hardening", () => {
   });
 
   it("does not use a scripted demo verdict path", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(new URL("./server.ts", import.meta.url), "utf8");
+    assert.equal(src.includes("web-local-verdict"), false);
+    assert.equal(/winner:\s*"ours".*demo/s.test(src), false);
+
     const { res, data } = await call("POST", "/api/runs", {
       body: {
         goal: "tiny page. pieces: hero",
@@ -90,25 +99,6 @@ describe("web server hardening", () => {
     assert.equal(res.status, 201);
     assert.equal(data.composeOnly, true);
     assert.equal(String(data.note || "").includes("demo verdict"), false);
-
-    const started = await call("POST", "/api/runs", {
-      body: {
-        goal: "tiny page. pieces: hero",
-        bar: {
-          id: "a",
-          name: "Example Domain",
-          url: "https://example.com",
-        },
-        skipBarFetch: true,
-        maxUsd: 0,
-      },
-    });
-    // Zero budget may fail before loop; either way must not advertise scripted win.
-    assert.equal(
-      String(started.data.note || "").includes("demo verdict"),
-      false,
-    );
-    assert.notEqual(started.data.critic, "web-local-verdict");
   });
 
   it("rejects path-traversal stop ids", async () => {

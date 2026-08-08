@@ -12,6 +12,12 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["runtime/**/*", "adapters/**/*", "cli/**/*", "web/**/*"],
+  "include": [
+    "runtime/**/*",
+    "adapters/**/*",
+    "cli/**/*",
+    "web/**/*",
+    "scripts/**/*"
+  ],
   "exclude": ["node_modules", "dist", "runs", "web/public"]
 }
