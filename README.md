@@ -20,6 +20,9 @@ npm run gauntlet -- status
 npm run gauntlet -- stop
 npm run demo
 npm run web    # http://localhost:8787 — 4-step local UI
+
+# Marketing site (Vercel)
+cd site && npm install && npm run dev
 ```
 
 ## CLI

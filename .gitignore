@@ -1,6 +1,9 @@
 node_modules/
 dist/
 runs/
+site/.next/
+site/node_modules/
+site/.vercel/
 .env
 .env.*
 !.env.example
