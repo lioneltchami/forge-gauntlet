@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { UsageDelta } from "../runtime/checkpoint.js";
 
@@ -95,15 +95,6 @@ export function parseAgentUsage(
   );
 }
 
-async function fileExists(p: string) {
-  try {
-    await access(p, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Resolve CLI on PATH. */
 export async function resolveBinary(names: string[]): Promise<string | null> {
   for (const name of names) {
@@ -121,15 +112,27 @@ export async function resolveBinary(names: string[]): Promise<string | null> {
 function runCmd(
   command: string,
   args: string[],
-  opts: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {},
+  opts: {
+    cwd?: string;
+    timeoutMs?: number;
+    env?: NodeJS.ProcessEnv;
+    stdin?: string;
+  } = {},
 ): Promise<SpawnResult> {
   const timeoutMs = opts.timeoutMs ?? 120_000;
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [opts.stdin == null ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (opts.stdin != null) {
+      child.stdin?.on("error", () => {
+        // Child may exit before consuming stdin. Process close/error below
+        // produces the authoritative SpawnResult.
+      });
+      child.stdin?.end(opts.stdin);
+    }
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
@@ -144,10 +147,10 @@ function runCmd(
         reason: "timeout",
       });
     }, timeoutMs);
-    child.stdout.on("data", (d) => {
+    child.stdout?.on("data", (d) => {
       stdout += d.toString();
     });
-    child.stderr.on("data", (d) => {
+    child.stderr?.on("data", (d) => {
       stderr += d.toString();
     });
     child.on("error", (err) => {
@@ -178,6 +181,30 @@ function runCmd(
 
 export type AgentKind = "claude" | "codex";
 
+export function buildAgentInvocation(
+  kind: AgentKind,
+  prompt: string,
+  maxUsd?: number,
+): { args: string[]; stdin: string } {
+  if (kind === "claude") {
+    const args = [
+      "-p",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "acceptEdits",
+    ];
+    if (maxUsd != null) {
+      args.push("--max-budget-usd", String(Math.max(0, maxUsd)));
+    }
+    return { args, stdin: prompt };
+  }
+  return {
+    args: ["exec", "--json", "--sandbox", "workspace-write", "-"],
+    stdin: prompt,
+  };
+}
+
 export async function detectAgents(): Promise<{
   claude: string | null;
   codex: string | null;
@@ -204,22 +231,8 @@ export async function spawnImplementer(args: {
   /** Provider-side ceiling when supported (Claude Code). */
   maxUsd?: number;
 }): Promise<SpawnResult & { logPath?: string }> {
-  const agents = await detectAgents();
-  const bin = args.kind === "claude" ? agents.claude : agents.codex;
-  if (!bin) {
-    return {
-      ok: false,
-      command: args.kind,
-      args: [],
-      stdout: "",
-      stderr: "",
-      code: null,
-      skipped: true,
-      reason: `${args.kind} CLI not found on PATH`,
-    };
-  }
-
   const prompt = await readFile(args.promptPath, "utf8");
+  const invocation = buildAgentInvocation(args.kind, prompt, args.maxUsd);
   const outDir = path.join(args.runDir, "dispatch");
   await mkdir(outDir, { recursive: true });
   const logPath = path.join(
@@ -228,12 +241,12 @@ export async function spawnImplementer(args: {
   );
 
   if (args.dryRun) {
-    const msg = `[dry-run] Would invoke ${bin} with prompt ${args.promptPath} (${prompt.length} chars)`;
+    const msg = `[dry-run] Would invoke ${args.kind} ${invocation.args.join(" ")} with prompt stdin from ${args.promptPath} (${prompt.length} chars)`;
     await writeFile(logPath, msg + "\n", "utf8");
     return {
       ok: true,
-      command: bin,
-      args: ["(dry-run)"],
+      command: args.kind,
+      args: invocation.args,
       stdout: msg,
       stderr: "",
       code: 0,
@@ -243,40 +256,28 @@ export async function spawnImplementer(args: {
     };
   }
 
-  // Prefer non-interactive print/exec modes. Flags vary by CLI version —
-  // try known shapes; user can paste ORCHESTRATOR.md if spawn fails.
-  let result: SpawnResult;
-  if (args.kind === "claude") {
-    const claudeArgs = ["-p", prompt, "--output-format", "json"];
-    if (args.maxUsd != null) {
-      claudeArgs.push("--max-budget-usd", String(Math.max(0, args.maxUsd)));
-    }
-    result = await runCmd(bin, claudeArgs, {
-      cwd: args.cwd,
-      timeoutMs: args.timeoutMs ?? 600_000,
-    });
-    // Fallback older flag set
-    if (!result.ok && /unknown|unrecognized/i.test(result.stderr)) {
-      result = await runCmd(bin, ["-p", prompt], {
-        cwd: args.cwd,
-        timeoutMs: args.timeoutMs ?? 600_000,
-      });
-    }
-  } else {
-    result = await runCmd(bin, ["exec", "--json", prompt], {
-      cwd: args.cwd,
-      timeoutMs: args.timeoutMs ?? 600_000,
-    });
-    if (
-      !result.ok &&
-      /unknown|unrecognized|usage/i.test(result.stderr + result.stdout)
-    ) {
-      result = await runCmd(bin, ["--quiet", prompt], {
-        cwd: args.cwd,
-        timeoutMs: args.timeoutMs ?? 600_000,
-      });
-    }
+  const agents = await detectAgents();
+  const bin = args.kind === "claude" ? agents.claude : agents.codex;
+  if (!bin) {
+    const reason = `${args.kind} CLI not found on PATH`;
+    await writeFile(logPath, `${reason}\n`, "utf8");
+    return {
+      ok: false,
+      command: args.kind,
+      args: invocation.args,
+      stdout: "",
+      stderr: "",
+      code: null,
+      skipped: true,
+      reason,
+      logPath,
+    };
   }
+  const result = await runCmd(bin, invocation.args, {
+    cwd: args.cwd,
+    timeoutMs: args.timeoutMs ?? 600_000,
+    stdin: invocation.stdin,
+  });
   result.usage = parseAgentUsage(args.kind, result.stdout);
 
   await writeFile(
@@ -300,18 +301,142 @@ export async function spawnImplementer(args: {
   return { ...result, logPath };
 }
 
+export type ArtifactSnapshot = Record<string, string>;
+
+const VISUAL_ARTIFACT_EXTENSIONS = new Set([
+  ".html",
+  ".htm",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".svg",
+]);
+
+const TEXT_ARTIFACT_EXTENSIONS = new Set([
+  ".html",
+  ".htm",
+  ".txt",
+  ".md",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".json",
+  ".css",
+  ".scss",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".rb",
+  ".php",
+  ".vue",
+  ".svelte",
+]);
+
+const VISUAL_SUPPORT_EXTENSIONS = new Set([
+  ...VISUAL_ARTIFACT_EXTENSIONS,
+  ".css",
+  ".scss",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".json",
+  ".vue",
+  ".svelte",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+]);
+
+async function artifactFiles(root: string, dir = root): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files: string[] = [];
+  for (const entry of entries) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      files.push(...(await artifactFiles(root, entryPath)));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}
+
+async function artifactSignature(filePath: string): Promise<string> {
+  const [contents, metadata] = await Promise.all([
+    readFile(filePath),
+    stat(filePath, { bigint: true }),
+  ]);
+  const hash = createHash("sha256").update(contents).digest("hex");
+  return `${metadata.mtimeNs}:${metadata.size}:${hash}`;
+}
+
+export async function snapshotArtifacts(
+  runDir: string,
+  pieceId: string,
+): Promise<ArtifactSnapshot> {
+  const root = path.join(runDir, "artifacts", pieceId);
+  const snapshot: ArtifactSnapshot = {};
+  for (const filePath of await artifactFiles(root)) {
+    snapshot[path.relative(root, filePath)] = await artifactSignature(filePath);
+  }
+  return snapshot;
+}
+
 export async function findArtifactAfterSpawn(
   runDir: string,
   pieceId: string,
+  before: ArtifactSnapshot = {},
+  kind: "image" | "text" = "text",
 ): Promise<string | null> {
-  const candidates = [
-    path.join(runDir, "artifacts", pieceId, "index.html"),
-    path.join(runDir, "artifacts", pieceId, "artifact.html"),
-    path.join(runDir, "artifacts", pieceId, "main.js"),
-    path.join(runDir, "artifacts", pieceId, "App.tsx"),
-  ];
-  for (const c of candidates) {
-    if (await fileExists(c)) return c;
+  const root = path.join(runDir, "artifacts", pieceId);
+  const files = await artifactFiles(root);
+  const fresh = new Set<string>();
+  for (const filePath of files) {
+    const relative = path.relative(root, filePath);
+    if (before[relative] !== (await artifactSignature(filePath))) {
+      fresh.add(filePath);
+    }
   }
-  return null;
+  if (!fresh.size) return null;
+
+  const renderable = files.filter((filePath) => {
+    const extension = path.extname(filePath).toLowerCase();
+    return kind === "image"
+      ? VISUAL_ARTIFACT_EXTENSIONS.has(extension)
+      : TEXT_ARTIFACT_EXTENSIONS.has(extension);
+  });
+  const freshRenderable = renderable.filter((filePath) => fresh.has(filePath));
+  const hasFreshVisualSupport =
+    kind === "image" &&
+    [...fresh].some((filePath) =>
+      VISUAL_SUPPORT_EXTENSIONS.has(path.extname(filePath).toLowerCase()),
+    );
+  const candidates = freshRenderable.length
+    ? freshRenderable
+    : hasFreshVisualSupport
+      ? renderable
+      : [];
+  candidates.sort((a, b) => {
+    const aFresh = fresh.has(a) ? 0 : 1;
+    const bFresh = fresh.has(b) ? 0 : 1;
+    const aIndex = path.basename(a).toLowerCase() === "index.html" ? 0 : 1;
+    const bIndex = path.basename(b).toLowerCase() === "index.html" ? 0 : 1;
+    return aFresh - bFresh || aIndex - bIndex || a.localeCompare(b);
+  });
+  return candidates[0] ?? null;
 }

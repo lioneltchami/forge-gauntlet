@@ -45,6 +45,7 @@ export const PieceStatusSchema = z.enum([
   "critiquing",
   "won",
   "stopped",
+  "failed",
 ]);
 export type PieceStatus = z.infer<typeof PieceStatusSchema>;
 
@@ -55,6 +56,7 @@ export const PieceSchema = z.object({
   round: z.number().int().nonnegative(),
   lastVerdict: z.enum(["ours", "bar"]).nullable(),
   gap: z.string().nullable(),
+  error: z.string().nullable().optional(),
   artifactPath: z.string().nullable(),
   openAs: z.string().nullable(),
 });
@@ -75,6 +77,8 @@ export const RunStatusSchema = z.enum([
   "completed",
   "stopped_by_user",
   "failed_bar",
+  "failed_agent",
+  "failed_evidence",
   "blocked_gate",
   "budget_exhausted",
 ]);

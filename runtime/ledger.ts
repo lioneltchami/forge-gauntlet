@@ -132,11 +132,11 @@ export function renderProgress(meta: RunMeta, pieces: Piece[]): string {
   }
   lines.push(`**Updated:** ${meta.updatedAt}`);
   lines.push("");
-  lines.push("| Piece | Status | Round | Last verdict | Gap |");
+  lines.push("| Piece | Status | Round | Last verdict | Gap / Error |");
   lines.push("|---|---|---:|---|---|");
   for (const p of pieces) {
     lines.push(
-      `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"} | ${p.gap ?? "—"} |`,
+      `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"} | ${p.error ?? p.gap ?? "—"} |`,
     );
   }
   lines.push("");

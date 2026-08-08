@@ -184,7 +184,7 @@ describe("runtime loop", () => {
   it("fails closed when visual evidence cannot be captured", async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "gauntlet-"));
     try {
-      const { runId } = await createRun({
+      const { runId, dir } = await createRun({
         goal: "landing page. pieces: hero",
         bar: {
           id: "reference",
@@ -210,6 +210,9 @@ describe("runtime loop", () => {
         ),
         /capture denied/,
       );
+      const { readMeta, readPieces } = await import("./ledger.js");
+      assert.equal((await readMeta(dir)).status, "failed_evidence");
+      assert.equal((await readPieces(dir))[0]?.status, "failed");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -220,7 +223,7 @@ describe("runtime loop", () => {
     const previousKey = process.env.OPENROUTER_API_KEY;
     delete process.env.OPENROUTER_API_KEY;
     try {
-      const { runId } = await createRun({
+      const { runId, dir } = await createRun({
         goal: "landing page. pieces: hero",
         bar: {
           id: "reference",
@@ -245,6 +248,151 @@ describe("runtime loop", () => {
     } finally {
       if (previousKey == null) delete process.env.OPENROUTER_API_KEY;
       else process.env.OPENROUTER_API_KEY = previousKey;
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("persists spawned-agent failure instead of substituting a stub", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "gauntlet-"));
+    try {
+      const { runId, dir } = await createRun({
+        goal: "build CLI tool. pieces: command",
+        bar: {
+          id: "reference",
+          name: "Reference Repository",
+          url: "data:text/plain,Reference%20implementation.",
+        },
+        cwd,
+        skipBarFetch: true,
+        implementer: "claude",
+        maxUsd: 5,
+      });
+
+      await assert.rejects(
+        runLoop(
+          runId,
+          {
+            spawnAgent: true,
+            spawnFn: async () => ({
+              ok: false,
+              command: "claude",
+              args: [],
+              stdout: "",
+              stderr: "permission denied",
+              code: 1,
+              reason: "permission denied",
+            }),
+          },
+          cwd,
+        ),
+        /agent spawn failed.*permission denied/i,
+      );
+
+      const { readMeta, readPieces } = await import("./ledger.js");
+      assert.equal((await readMeta(dir)).status, "failed_agent");
+      const [piece] = await readPieces(dir);
+      assert.equal(piece.status, "failed");
+      assert.match(piece.error ?? "", /permission denied/i);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a successful spawn that did not write a fresh artifact", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "gauntlet-"));
+    try {
+      const { runId, dir } = await createRun({
+        goal: "build CLI tool. pieces: command",
+        bar: {
+          id: "reference",
+          name: "Reference Repository",
+          url: "data:text/plain,Reference%20implementation.",
+        },
+        cwd,
+        skipBarFetch: true,
+        implementer: "codex",
+      });
+
+      await assert.rejects(
+        runLoop(
+          runId,
+          {
+            spawnAgent: true,
+            spawnFn: async () => ({
+              ok: true,
+              command: "codex",
+              args: [],
+              stdout: "{}",
+              stderr: "",
+              code: 0,
+            }),
+          },
+          cwd,
+        ),
+        /no fresh gradeable artifact/i,
+      );
+
+      const { readMeta, readPieces } = await import("./ledger.js");
+      assert.equal((await readMeta(dir)).status, "failed_agent");
+      assert.equal((await readPieces(dir))[0]?.status, "failed");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a fresh spawned artifact and completes the blind round", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "gauntlet-"));
+    try {
+      const { runId, dir } = await createRun({
+        goal: "build landing page. pieces: hero",
+        bar: {
+          id: "reference",
+          name: "Linear Homepage",
+          url: "https://linear.app",
+        },
+        cwd,
+        skipBarFetch: true,
+        implementer: "claude",
+      });
+
+      const result = await runLoop(
+        runId,
+        {
+          spawnAgent: true,
+          screenshotFn: testScreenshot,
+          spawnFn: async (args) => {
+            const artifact = path.join(
+              args.runDir,
+              "artifacts",
+              args.pieceId,
+              "index.html",
+            );
+            await mkdir(path.dirname(artifact), { recursive: true });
+            await writeFile(artifact, "<h1>Fresh</h1>", "utf8");
+            return {
+              ok: true,
+              command: "claude",
+              args: [],
+              stdout: "{}",
+              stderr: "",
+              code: 0,
+            };
+          },
+          verdictFn: async () => ({
+            winner: "ours",
+            gap: "",
+            confidence: 1,
+          }),
+        },
+        cwd,
+      );
+
+      assert.equal(result.status, "completed");
+      const { readPieces } = await import("./ledger.js");
+      const [piece] = await readPieces(dir);
+      assert.equal(piece.status, "won");
+      assert.match(piece.artifactPath ?? "", /index\.html$/);
+    } finally {
       await rm(cwd, { recursive: true, force: true });
     }
   });

@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { compareFramesGrid, syntheticPng } from "../runtime/apex/compare.js";
-import { detectAgents, parseAgentUsage, spawnImplementer } from "./spawn.js";
+import {
+	buildAgentInvocation,
+	detectAgents,
+	findArtifactAfterSpawn,
+	parseAgentUsage,
+	snapshotArtifacts,
+	spawnImplementer,
+} from "./spawn.js";
 
 describe("spawn adapters", () => {
 	it("detects claude and/or codex on this machine", async () => {
@@ -70,6 +77,80 @@ describe("spawn adapters", () => {
 			),
 			{ tokens: 50, usd: undefined },
 		);
+	});
+
+	it("builds writable non-interactive commands without prompt argv leakage", () => {
+		const prompt = "private dispatch prompt";
+		const claude = buildAgentInvocation("claude", prompt, 0.5);
+		assert.deepEqual(claude.args, [
+			"-p",
+			"--output-format",
+			"json",
+			"--permission-mode",
+			"acceptEdits",
+			"--max-budget-usd",
+			"0.5",
+		]);
+		assert.equal(claude.stdin, prompt);
+		assert.equal(claude.args.includes(prompt), false);
+
+		const codex = buildAgentInvocation("codex", prompt);
+		assert.deepEqual(codex.args, [
+			"exec",
+			"--json",
+			"--sandbox",
+			"workspace-write",
+			"-",
+		]);
+		assert.equal(codex.stdin, prompt);
+		assert.equal(codex.args.includes(prompt), false);
+	});
+
+	it("accepts only artifacts created or changed by the spawn", async () => {
+		const runDir = await mkdtemp(path.join(tmpdir(), "artifacts-"));
+		try {
+			const pieceDir = path.join(runDir, "artifacts", "piece-01");
+			await mkdir(pieceDir, { recursive: true });
+			const stale = path.join(pieceDir, "index.html");
+			await writeFile(stale, "stale", "utf8");
+			const before = await snapshotArtifacts(runDir, "piece-01");
+
+			assert.equal(
+				await findArtifactAfterSpawn(runDir, "piece-01", before),
+				null,
+			);
+
+			await writeFile(stale, "stale", "utf8");
+			assert.equal(
+				await findArtifactAfterSpawn(runDir, "piece-01", before, "image"),
+				stale,
+			);
+			const afterRewrite = await snapshotArtifacts(runDir, "piece-01");
+
+			const fresh = path.join(pieceDir, "nested", "result.html");
+			await mkdir(path.dirname(fresh), { recursive: true });
+			await writeFile(fresh, "fresh", "utf8");
+			assert.equal(
+				await findArtifactAfterSpawn(runDir, "piece-01", afterRewrite),
+				fresh,
+			);
+
+			const afterHtml = await snapshotArtifacts(runDir, "piece-01");
+			await writeFile(path.join(pieceDir, "style.css"), "body{}", "utf8");
+			assert.equal(
+				await findArtifactAfterSpawn(runDir, "piece-01", afterHtml, "image"),
+				stale,
+			);
+
+			const afterCss = await snapshotArtifacts(runDir, "piece-01");
+			await writeFile(path.join(pieceDir, "notes.md"), "notes", "utf8");
+			assert.equal(
+				await findArtifactAfterSpawn(runDir, "piece-01", afterCss, "image"),
+				null,
+			);
+		} finally {
+			await rm(runDir, { recursive: true, force: true });
+		}
 	});
 });
 

@@ -107,8 +107,9 @@ export async function resumeRun(
   meta.status = "running";
   meta.updatedAt = new Date().toISOString();
   for (const p of pieces) {
-    if (p.status === "stopped") {
+    if (p.status === "stopped" || p.status === "failed") {
       p.status = "pending";
+      p.error = null;
     }
   }
   await writeMeta(dir, meta);
@@ -142,11 +143,11 @@ export async function writeWorkbench(
       ? `Accounting: **${meta.budgetState.exhausted ? "BLOCKED" : "WARNING"}** — ${meta.budgetState.accountingError}`
       : "",
     "",
-    "| Piece | Status | Round | Verdict | Gap |",
+    "| Piece | Status | Round | Verdict | Gap / Error |",
     "|---|---|---:|---|---|",
     ...pieces.map(
       (p) =>
-        `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"} | ${p.gap ?? "—"} |`,
+        `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"} | ${p.error ?? p.gap ?? "—"} |`,
     ),
     "",
     "## Human gates",

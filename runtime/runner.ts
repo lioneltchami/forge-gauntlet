@@ -10,6 +10,7 @@ import {
 import {
   type AgentKind,
   findArtifactAfterSpawn,
+  snapshotArtifacts,
   spawnImplementer,
 } from "../adapters/spawn.js";
 import { visionBlindCritic } from "../adapters/vision-critic.js";
@@ -105,6 +106,7 @@ export type RoundHooks = {
   dispatchOnly?: boolean;
   /** After writing dispatch, spawn Claude/Codex CLI */
   spawnAgent?: boolean;
+  spawnFn?: typeof spawnImplementer;
   spawnKind?: AgentKind;
   spawnDryRun?: boolean;
   spawnTimeoutMs?: number;
@@ -113,6 +115,14 @@ export type RoundHooks = {
 
 function isVisualEvidencePath(filePath: string): boolean {
   return /\.(png|jpe?g|webp)$/i.test(filePath);
+}
+
+function evidenceKindForGoal(goalType: RunMeta["goalType"]): "image" | "text" {
+  return goalType === "writing" ||
+    goalType === "research" ||
+    goalType === "code"
+    ? "text"
+    : "image";
 }
 
 function remainingUsageLimits(meta: RunMeta): {
@@ -174,6 +184,33 @@ async function accountModelUsage(args: {
   await writeProgress(args.dir, persisted, args.pieces);
   await writeWorkbench(args.dir, persisted, args.pieces);
   return persisted;
+}
+
+async function failAgentRun(args: {
+  dir: string;
+  pieces: Piece[];
+  piece: Piece;
+  message: string;
+  status?: "failed_agent" | "failed_evidence";
+}): Promise<never> {
+  args.piece.status = "failed";
+  args.piece.error = args.message;
+  await writePieces(args.dir, args.pieces);
+
+  const latest = await readMeta(args.dir);
+  if (
+    latest.status !== "stopped_by_user" &&
+    latest.status !== "budget_exhausted"
+  ) {
+    latest.status = args.status ?? "failed_agent";
+  }
+  latest.updatedAt = new Date().toISOString();
+  await writeMeta(args.dir, latest);
+  const persisted = await readMeta(args.dir);
+  const persistedPieces = await readPieces(args.dir);
+  await writeProgress(args.dir, persisted, persistedPieces);
+  await writeWorkbench(args.dir, persisted, persistedPieces);
+  throw new Error(args.message);
 }
 
 export async function propose(goal: string) {
@@ -359,11 +396,7 @@ async function captureBarEvidence(
   const barOut = path.join(base, "bar.png");
   if (!meta.bar.url) throw new Error("Bar has no URL for evidence capture.");
 
-  if (
-    meta.goalType === "writing" ||
-    meta.goalType === "research" ||
-    meta.goalType === "code"
-  ) {
+  if (evidenceKindForGoal(meta.goalType) === "text") {
     const t = await fetchTextEvidence(meta.bar.url, path.join(base, "bar.txt"));
     return { path: t.path, kind: "text" };
   }
@@ -408,7 +441,9 @@ async function captureOursEvidence(
 
   const renderUrl =
     meta.previewUrl ??
-    (artifactPath.toLowerCase().endsWith(".html")
+    ([".html", ".htm", ".svg"].includes(
+      path.extname(artifactPath).toLowerCase(),
+    )
       ? pathToFileURL(artifactPath).href
       : undefined);
   if (!renderUrl) {
@@ -454,6 +489,7 @@ export async function runLoop(
   await writeMeta(dir, meta);
 
   const builder = hooks.builderFn ?? defaultBuilder;
+  const spawnAgent = hooks.spawnFn ?? spawnImplementer;
   const screenshot: ScreenshotFn =
     hooks.screenshotFn ??
     ((url, outPath, viewport) =>
@@ -495,6 +531,7 @@ export async function runLoop(
       }
 
       piece.status = "building";
+      piece.error = null;
       piece.round += 1;
       await writePieces(dir, pieces);
       await writeProgress(dir, meta, pieces);
@@ -537,7 +574,8 @@ export async function runLoop(
           "dispatch",
           `${piece.id}-r${piece.round}-builder.md`,
         );
-        const spawned = await spawnImplementer({
+        const beforeArtifacts = await snapshotArtifacts(dir, piece.id);
+        const spawned = await spawnAgent({
           kind,
           promptPath: dispatchPath,
           cwd: cwd,
@@ -548,6 +586,31 @@ export async function runLoop(
           timeoutMs: hooks.spawnTimeoutMs,
           maxUsd: remainingUsageLimits(meta).maxUsd,
         });
+        // Spawned agents may write only their artifact. Restore trusted
+        // in-memory ledger state while preserving an external stop sentinel.
+        await writeMeta(dir, meta);
+        await writePieces(dir, pieces);
+        meta = await readMeta(dir);
+        if (!spawned.ok) {
+          if (spawned.usage) {
+            meta = await accountModelUsage({
+              dir,
+              pieces,
+              source: `${kind} builder`,
+              usage: spawned.usage,
+            });
+          }
+          const detail =
+            spawned.reason ||
+            spawned.stderr.trim() ||
+            `exit code ${spawned.code ?? "unknown"}`;
+          await failAgentRun({
+            dir,
+            pieces,
+            piece,
+            message: `Agent spawn failed (${kind}): ${detail}. Log: ${spawned.logPath ?? "unavailable"}`,
+          });
+        }
         if (!spawned.skipped) {
           meta = await accountModelUsage({
             dir,
@@ -561,10 +624,7 @@ export async function runLoop(
             break;
           }
         }
-        const found = await findArtifactAfterSpawn(dir, piece.id);
-        if (found) {
-          built = { artifactPath: found, openAs: `file://${found}` };
-        } else if (hooks.spawnDryRun || spawned.skipped) {
+        if (hooks.spawnDryRun && spawned.reason === "dry-run") {
           built = await builder({
             piece,
             gap: piece.gap,
@@ -572,14 +632,24 @@ export async function runLoop(
             goal: meta.goal,
           });
         } else {
-          // Spawn ran but no artifact — fall back to local builder so loop can continue
-          built = await builder({
-            piece,
-            gap: piece.gap,
-            runDir: dir,
-            goal: meta.goal,
-          });
-          built.notes = `spawn ${kind} code=${spawned.code}; fallback local builder. log=${spawned.logPath ?? "?"}`;
+          const found = await findArtifactAfterSpawn(
+            dir,
+            piece.id,
+            beforeArtifacts,
+            evidenceKindForGoal(meta.goalType),
+          );
+          if (!found) {
+            await failAgentRun({
+              dir,
+              pieces,
+              piece,
+              message: `Agent spawn failed (${kind}): no fresh gradeable artifact or supporting visual file was written under artifacts/${piece.id}. Log: ${spawned.logPath ?? "unavailable"}`,
+            });
+          }
+          built = {
+            artifactPath: found!,
+            openAs: pathToFileURL(found!).href,
+          };
         }
       } else {
         built = await builder({
@@ -596,22 +666,35 @@ export async function runLoop(
       await writePieces(dir, pieces);
       await writeProgress(dir, meta, pieces);
 
-      const barEv = await captureBarEvidence(
-        meta,
-        dir,
-        piece.id,
-        piece.round,
-        screenshot,
-      );
-      const oursPath = await captureOursEvidence(
-        built.artifactPath,
-        meta,
-        dir,
-        piece.id,
-        piece.round,
-        barEv.kind,
-        screenshot,
-      );
+      const { barEv, oursPath } = await (async () => {
+        try {
+          const barEv = await captureBarEvidence(
+            meta,
+            dir,
+            piece.id,
+            piece.round,
+            screenshot,
+          );
+          const oursPath = await captureOursEvidence(
+            built.artifactPath,
+            meta,
+            dir,
+            piece.id,
+            piece.round,
+            barEv.kind,
+            screenshot,
+          );
+          return { barEv, oursPath };
+        } catch (error) {
+          return failAgentRun({
+            dir,
+            pieces,
+            piece,
+            status: "failed_evidence",
+            message: `Evidence capture failed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      })();
 
       const blindDir = path.join(
         dir,
