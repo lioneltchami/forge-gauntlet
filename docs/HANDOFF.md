@@ -1,14 +1,14 @@
 # HANDOFF — Gauntlet Runtime
 
-**Updated:** 2026-08-08 (P2–P4 finished for local testing)  
+**Updated:** 2026-08-08 (Spisak adoptions: plan extract, smoothing, adversarial, workbench)  
 **Repo:** `/Users/lionel/builders/gauntlet` · **Version:** 0.2.0
 
 ## Ready to test
 
 ```bash
 cd /Users/lionel/builders/gauntlet
-npm test          # 19 passing
-npm run build
+npm test          # 69 passing
+npm run ci
 npm run gauntlet -- doctor
 npm run demo
 npm run web       # http://localhost:8787
@@ -19,6 +19,10 @@ npm run web       # http://localhost:8787
 | Feature                                 | How                                                                              |
 | --------------------------------------- | -------------------------------------------------------------------------------- |
 | Propose / compose / run / stop / resume | CLI as before                                                                    |
+| **Compose from plan**                   | `compose --plan plan.md\|spec.html --bar a --goal "…" [--json]`                  |
+| **Smoothing + adversarial**             | Enforced after blind wins; risky piece names / `--` criteria via compose         |
+| **Workbench findings**                  | `runs/<id>/workbench.md` — rounds, verdict, open findings, smoothing             |
+| **Skills packaging**                    | `skills/gauntlet/` for `npx skills add`; also `skill/`                           |
 | **Spawn Claude/Codex**                  | `--spawn-agent --spawn-dry` (safe) or `--spawn-agent` (live)                     |
 | **Vision critic**                       | `export OPENROUTER_API_KEY=…` then `--vision-critic` (auto if key set)           |
 | **Edge-energy compare**                 | `gauntlet compare a.png b.png --grid 6`                                          |
@@ -36,6 +40,9 @@ npm run web       # http://localhost:8787
 | P2 vision auto + graceful fallback                    | Done                                |
 | P3 apex grid edge-energy compare                      | Done (PNG / pngjs)                  |
 | P4 Stripe REST checkout + webhook verify + web bearer | Done (live when keys set)           |
+| Spisak: plan/HTML + DERIVED gaps                      | Done                                |
+| Spisak: smoothing + adversarial + criteria map        | Done                                |
+| Spisak: workbench findings + skills packaging         | Done                                |
 | P5 full Nike/F1 proof with paid tokens                | **You** — needs Max plan + keys     |
 | CDP WebGL pause/renderFrame                           | Still project-level (`CONTRACT.md`) |
 

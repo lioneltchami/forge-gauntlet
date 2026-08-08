@@ -27,8 +27,14 @@ import {
 import { composeSystemPrompt } from "./compose.js";
 import {
   buildBlindCriticPrompt,
+  buildCriteriaAuditPrompt,
+  buildSmoothingPrompt,
+  heuristicAuditPass,
   heuristicCritic,
+  heuristicSmoothingPass,
+  isRiskyPiece,
   mapBlindWinner,
+  parseAuditJson,
   parseCriticJson,
   randomizePair,
 } from "./critic.js";
@@ -54,6 +60,7 @@ import {
 } from "./ledger.js";
 import { shouldContinue } from "./stop.js";
 import type {
+  AuditPass,
   BarCandidate,
   BuilderOutput,
   Measurable,
@@ -75,6 +82,8 @@ export type CreateRunOptions = {
   humanGates?: string[];
   safetyNever?: string[];
   acceptanceCriteria?: string[];
+  riskyPieces?: string[];
+  planGaps?: string[];
   maxUsd?: number;
   maxTokens?: number;
   previewUrl?: string;
@@ -101,6 +110,20 @@ export type RoundHooks = {
     runDir: string;
     goal: string;
   }) => Promise<BuilderOutput>;
+  /** Override adversarial second opinion (risky pieces). */
+  adversarialFn?: (ctx: {
+    piece: Piece;
+    artifactPath: string | null;
+    prompt: string;
+  }) => Promise<AuditPass>;
+  /** Override post-win smoothing critic on the integrated whole. */
+  smoothingFn?: (ctx: {
+    meta: RunMeta;
+    pieces: Piece[];
+    prompt: string;
+  }) => Promise<AuditPass>;
+  /** Skip enforced smoothing (tests only). Prefer hook override instead. */
+  skipSmoothing?: boolean;
   maxRoundsPerPiece?: number;
   /** Write dispatch packets for external agents instead of local stub builder */
   dispatchOnly?: boolean;
@@ -275,6 +298,8 @@ export async function createRun(opts: CreateRunOptions): Promise<{
     humanGates: opts.humanGates,
     safetyNever: opts.safetyNever,
     acceptanceCriteria: opts.acceptanceCriteria,
+    riskyPieces: opts.riskyPieces,
+    planGaps: opts.planGaps,
     budgetState: emptyBudget(opts.maxUsd, opts.maxTokens),
     previewUrl: opts.previewUrl,
     climbUntilHumanStop: opts.climbUntilHumanStop ?? mode === "apex",
@@ -495,18 +520,15 @@ export async function runLoop(
     ((url, outPath, viewport) =>
       screenshotUrl(url, outPath, viewport, { allowHtmlFallback: false }));
 
-  for (const piece of pieces) {
-    meta = await readMeta(dir);
-    if (meta.budgetState?.exhausted) {
-      meta.status = "budget_exhausted";
-      meta.updatedAt = new Date().toISOString();
-      await writeMeta(dir, meta);
-      break;
-    }
-    if (!shouldContinue(meta)) break;
-    if (piece.status === "won") continue;
+  const maxSmoothingWaves = 3;
+  let smoothingWave = 0;
 
-    while (true) {
+  while (smoothingWave <= maxSmoothingWaves) {
+    pieces = await readPieces(dir);
+    meta = await readMeta(dir);
+    if (!shouldContinue(meta) || meta.budgetState?.exhausted) break;
+
+    for (const piece of pieces) {
       meta = await readMeta(dir);
       if (meta.budgetState?.exhausted) {
         meta.status = "budget_exhausted";
@@ -515,363 +537,557 @@ export async function runLoop(
         break;
       }
       if (!shouldContinue(meta)) break;
+      if (piece.status === "won") continue;
 
-      if (
-        hooks.maxRoundsPerPiece != null &&
-        piece.round >= hooks.maxRoundsPerPiece
-      ) {
-        piece.status = "stopped";
-        piece.gap = `Demo maxRoundsPerPiece=${hooks.maxRoundsPerPiece} reached without a blind win.`;
+      while (true) {
+        meta = await readMeta(dir);
+        if (meta.budgetState?.exhausted) {
+          meta.status = "budget_exhausted";
+          meta.updatedAt = new Date().toISOString();
+          await writeMeta(dir, meta);
+          break;
+        }
+        if (!shouldContinue(meta)) break;
+
+        if (
+          hooks.maxRoundsPerPiece != null &&
+          piece.round >= hooks.maxRoundsPerPiece
+        ) {
+          piece.status = "stopped";
+          piece.gap = `Demo maxRoundsPerPiece=${hooks.maxRoundsPerPiece} reached without a blind win.`;
+          await writePieces(dir, pieces);
+          meta.updatedAt = new Date().toISOString();
+          await writeMeta(dir, meta);
+          await writeProgress(dir, meta, pieces);
+          await writeWorkbench(dir, meta, pieces);
+          break;
+        }
+
+        piece.status = "building";
+        piece.error = null;
+        piece.round += 1;
         await writePieces(dir, pieces);
-        meta.updatedAt = new Date().toISOString();
-        await writeMeta(dir, meta);
         await writeProgress(dir, meta, pieces);
         await writeWorkbench(dir, meta, pieces);
-        break;
-      }
 
-      piece.status = "building";
-      piece.error = null;
-      piece.round += 1;
-      await writePieces(dir, pieces);
-      await writeProgress(dir, meta, pieces);
-      await writeWorkbench(dir, meta, pieces);
-
-      await writeBuilderDispatch({
-        runDir: dir,
-        meta,
-        piece,
-        gap: piece.gap,
-      });
-
-      let built: BuilderOutput;
-      if (hooks.dispatchOnly && !hooks.spawnAgent) {
-        const artifactPath = path.join(
-          dir,
-          "artifacts",
-          piece.id,
-          "WAITING_FOR_AGENT.md",
-        );
-        await mkdir(path.dirname(artifactPath), { recursive: true });
-        await writeFile(
-          artifactPath,
-          `# Waiting for implementer\n\nSee \`dispatch/${piece.id}-r${piece.round}-builder.md\`.\n`,
-          "utf8",
-        );
-        built = { artifactPath, openAs: artifactPath };
-      } else if (hooks.spawnAgent) {
-        const kind: AgentKind =
-          hooks.spawnKind ??
-          (meta.implementer === "codex"
-            ? "codex"
-            : meta.implementer === "claude"
-              ? "claude"
-              : meta.agentEnv === "codex"
-                ? "codex"
-                : "claude");
-        const dispatchPath = path.join(
-          dir,
-          "dispatch",
-          `${piece.id}-r${piece.round}-builder.md`,
-        );
-        const beforeArtifacts = await snapshotArtifacts(dir, piece.id);
-        const spawned = await spawnAgent({
-          kind,
-          promptPath: dispatchPath,
-          cwd: cwd,
+        await writeBuilderDispatch({
           runDir: dir,
-          pieceId: piece.id,
-          round: piece.round,
-          dryRun: hooks.spawnDryRun,
-          timeoutMs: hooks.spawnTimeoutMs,
-          maxUsd: remainingUsageLimits(meta).maxUsd,
+          meta,
+          piece,
+          gap: piece.gap,
         });
-        // Spawned agents may write only their artifact. Restore trusted
-        // in-memory ledger state while preserving an external stop sentinel.
-        await writeMeta(dir, meta);
-        await writePieces(dir, pieces);
-        meta = await readMeta(dir);
-        if (!spawned.ok) {
-          if (spawned.usage) {
+
+        let built: BuilderOutput;
+        if (hooks.dispatchOnly && !hooks.spawnAgent) {
+          const artifactPath = path.join(
+            dir,
+            "artifacts",
+            piece.id,
+            "WAITING_FOR_AGENT.md",
+          );
+          await mkdir(path.dirname(artifactPath), { recursive: true });
+          await writeFile(
+            artifactPath,
+            `# Waiting for implementer\n\nSee \`dispatch/${piece.id}-r${piece.round}-builder.md\`.\n`,
+            "utf8",
+          );
+          built = { artifactPath, openAs: artifactPath };
+        } else if (hooks.spawnAgent) {
+          const kind: AgentKind =
+            hooks.spawnKind ??
+            (meta.implementer === "codex"
+              ? "codex"
+              : meta.implementer === "claude"
+                ? "claude"
+                : meta.agentEnv === "codex"
+                  ? "codex"
+                  : "claude");
+          const dispatchPath = path.join(
+            dir,
+            "dispatch",
+            `${piece.id}-r${piece.round}-builder.md`,
+          );
+          const beforeArtifacts = await snapshotArtifacts(dir, piece.id);
+          const spawned = await spawnAgent({
+            kind,
+            promptPath: dispatchPath,
+            cwd: cwd,
+            runDir: dir,
+            pieceId: piece.id,
+            round: piece.round,
+            dryRun: hooks.spawnDryRun,
+            timeoutMs: hooks.spawnTimeoutMs,
+            maxUsd: remainingUsageLimits(meta).maxUsd,
+          });
+          // Spawned agents may write only their artifact. Restore trusted
+          // in-memory ledger state while preserving an external stop sentinel.
+          await writeMeta(dir, meta);
+          await writePieces(dir, pieces);
+          meta = await readMeta(dir);
+          if (!spawned.ok) {
+            if (spawned.usage) {
+              meta = await accountModelUsage({
+                dir,
+                pieces,
+                source: `${kind} builder`,
+                usage: spawned.usage,
+              });
+            }
+            const detail =
+              spawned.reason ||
+              spawned.stderr.trim() ||
+              `exit code ${spawned.code ?? "unknown"}`;
+            await failAgentRun({
+              dir,
+              pieces,
+              piece,
+              message: `Agent spawn failed (${kind}): ${detail}. Log: ${spawned.logPath ?? "unavailable"}`,
+            });
+          }
+          if (!spawned.skipped) {
             meta = await accountModelUsage({
               dir,
               pieces,
               source: `${kind} builder`,
               usage: spawned.usage,
             });
+            if (!shouldContinue(meta)) {
+              piece.status = "pending";
+              await writePieces(dir, pieces);
+              break;
+            }
           }
-          const detail =
-            spawned.reason ||
-            spawned.stderr.trim() ||
-            `exit code ${spawned.code ?? "unknown"}`;
-          await failAgentRun({
-            dir,
-            pieces,
-            piece,
-            message: `Agent spawn failed (${kind}): ${detail}. Log: ${spawned.logPath ?? "unavailable"}`,
-          });
-        }
-        if (!spawned.skipped) {
-          meta = await accountModelUsage({
-            dir,
-            pieces,
-            source: `${kind} builder`,
-            usage: spawned.usage,
-          });
-          if (!shouldContinue(meta)) {
-            piece.status = "pending";
-            await writePieces(dir, pieces);
-            break;
+          if (hooks.spawnDryRun && spawned.reason === "dry-run") {
+            built = await builder({
+              piece,
+              gap: piece.gap,
+              runDir: dir,
+              goal: meta.goal,
+            });
+          } else {
+            const found = await findArtifactAfterSpawn(
+              dir,
+              piece.id,
+              beforeArtifacts,
+              evidenceKindForGoal(meta.goalType),
+            );
+            if (!found) {
+              await failAgentRun({
+                dir,
+                pieces,
+                piece,
+                message: `Agent spawn failed (${kind}): no fresh gradeable artifact or supporting visual file was written under artifacts/${piece.id}. Log: ${spawned.logPath ?? "unavailable"}`,
+              });
+            }
+            built = {
+              artifactPath: found!,
+              openAs: pathToFileURL(found!).href,
+            };
           }
-        }
-        if (hooks.spawnDryRun && spawned.reason === "dry-run") {
+        } else {
           built = await builder({
             piece,
             gap: piece.gap,
             runDir: dir,
             goal: meta.goal,
           });
-        } else {
-          const found = await findArtifactAfterSpawn(
-            dir,
-            piece.id,
-            beforeArtifacts,
-            evidenceKindForGoal(meta.goalType),
-          );
-          if (!found) {
-            await failAgentRun({
+        }
+        piece.artifactPath = built.artifactPath;
+        piece.openAs = built.openAs;
+
+        piece.status = "critiquing";
+        await writePieces(dir, pieces);
+        await writeProgress(dir, meta, pieces);
+
+        const { barEv, oursPath } = await (async () => {
+          try {
+            const barEv = await captureBarEvidence(
+              meta,
+              dir,
+              piece.id,
+              piece.round,
+              screenshot,
+            );
+            const oursPath = await captureOursEvidence(
+              built.artifactPath,
+              meta,
+              dir,
+              piece.id,
+              piece.round,
+              barEv.kind,
+              screenshot,
+            );
+            return { barEv, oursPath };
+          } catch (error) {
+            return failAgentRun({
               dir,
               pieces,
               piece,
-              message: `Agent spawn failed (${kind}): no fresh gradeable artifact or supporting visual file was written under artifacts/${piece.id}. Log: ${spawned.logPath ?? "unavailable"}`,
+              status: "failed_evidence",
+              message: `Evidence capture failed: ${error instanceof Error ? error.message : String(error)}`,
             });
           }
-          built = {
-            artifactPath: found!,
-            openAs: pathToFileURL(found!).href,
-          };
-        }
-      } else {
-        built = await builder({
-          piece,
-          gap: piece.gap,
+        })();
+
+        const blindDir = path.join(
+          dir,
+          "evidence",
+          piece.id,
+          `round-${piece.round}`,
+          "blind",
+        );
+        await mkdir(blindDir, { recursive: true });
+        const oursExt =
+          path.extname(oursPath) || (barEv.kind === "text" ? ".txt" : ".png");
+        const barExt =
+          path.extname(barEv.path) || (barEv.kind === "text" ? ".txt" : ".png");
+        const unlabeledOurs = path.join(
+          blindDir,
+          `candidate-${randomUUID()}${oursExt}`,
+        );
+        const unlabeledBar = path.join(
+          blindDir,
+          `candidate-${randomUUID()}${barExt}`,
+        );
+        await copyEvidence(oursPath, unlabeledOurs);
+        await copyEvidence(barEv.path, unlabeledBar);
+        const pair = randomizePair(unlabeledOurs, unlabeledBar, barEv.kind);
+        const prompt =
+          pair.kind === "text"
+            ? buildBlindCriticPrompt(
+                pair,
+                piece.name,
+                {
+                  leftText: await readFile(pair.leftPath, "utf8"),
+                  rightText: await readFile(pair.rightPath, "utf8"),
+                },
+                { acceptanceCriteria: meta.acceptanceCriteria },
+              )
+            : buildBlindCriticPrompt(pair, piece.name, undefined, {
+                acceptanceCriteria: meta.acceptanceCriteria,
+              });
+        const criticPromptPath = path.join(
+          dir,
+          "evidence",
+          piece.id,
+          `round-${piece.round}`,
+          "critic-prompt.txt",
+        );
+        await writeFile(criticPromptPath, prompt, "utf8");
+        await writeCriticDispatch({
           runDir: dir,
-          goal: meta.goal,
-        });
-      }
-      piece.artifactPath = built.artifactPath;
-      piece.openAs = built.openAs;
-
-      piece.status = "critiquing";
-      await writePieces(dir, pieces);
-      await writeProgress(dir, meta, pieces);
-
-      const { barEv, oursPath } = await (async () => {
-        try {
-          const barEv = await captureBarEvidence(
-            meta,
-            dir,
-            piece.id,
-            piece.round,
-            screenshot,
-          );
-          const oursPath = await captureOursEvidence(
-            built.artifactPath,
-            meta,
-            dir,
-            piece.id,
-            piece.round,
-            barEv.kind,
-            screenshot,
-          );
-          return { barEv, oursPath };
-        } catch (error) {
-          return failAgentRun({
-            dir,
-            pieces,
-            piece,
-            status: "failed_evidence",
-            message: `Evidence capture failed: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
-      })();
-
-      const blindDir = path.join(
-        dir,
-        "evidence",
-        piece.id,
-        `round-${piece.round}`,
-        "blind",
-      );
-      await mkdir(blindDir, { recursive: true });
-      const oursExt =
-        path.extname(oursPath) || (barEv.kind === "text" ? ".txt" : ".png");
-      const barExt =
-        path.extname(barEv.path) || (barEv.kind === "text" ? ".txt" : ".png");
-      const unlabeledOurs = path.join(
-        blindDir,
-        `candidate-${randomUUID()}${oursExt}`,
-      );
-      const unlabeledBar = path.join(
-        blindDir,
-        `candidate-${randomUUID()}${barExt}`,
-      );
-      await copyEvidence(oursPath, unlabeledOurs);
-      await copyEvidence(barEv.path, unlabeledBar);
-      const pair = randomizePair(unlabeledOurs, unlabeledBar, barEv.kind);
-      const prompt =
-        pair.kind === "text"
-          ? buildBlindCriticPrompt(pair, piece.name, {
-              leftText: await readFile(pair.leftPath, "utf8"),
-              rightText: await readFile(pair.rightPath, "utf8"),
-            })
-          : buildBlindCriticPrompt(pair, piece.name);
-      const criticPromptPath = path.join(
-        dir,
-        "evidence",
-        piece.id,
-        `round-${piece.round}`,
-        "critic-prompt.txt",
-      );
-      await writeFile(criticPromptPath, prompt, "utf8");
-      await writeCriticDispatch({
-        runDir: dir,
-        piece,
-        criticPromptPath,
-        leftPath: pair.leftPath,
-        rightPath: pair.rightPath,
-      });
-
-      let verdict: Verdict;
-      let haltAfterVerdict = false;
-      if (hooks.verdictFn) {
-        verdict = await hooks.verdictFn({
           piece,
-          round: piece.round,
-          oursPath,
-          barPath: barEv.path,
+          criticPromptPath,
+          leftPath: pair.leftPath,
+          rightPath: pair.rightPath,
         });
-      } else if (hooks.visionCritic && pair.kind === "image") {
-        if (
-          !isVisualEvidencePath(pair.leftPath) ||
-          !isVisualEvidencePath(pair.rightPath)
-        ) {
-          throw new Error("Vision critic requires two image evidence files.");
-        }
-        if (!process.env.OPENROUTER_API_KEY) {
-          throw new Error(
-            "Vision critic requested but OPENROUTER_API_KEY is unset.",
-          );
-        }
-        try {
-          const v = await visionBlindCritic({
-            leftPath: pair.leftPath,
-            rightPath: pair.rightPath,
-            pieceName: piece.name,
-            maxTokens: remainingUsageLimits(meta).maxTokens,
+
+        let verdict: Verdict;
+        let haltAfterVerdict = false;
+        if (hooks.verdictFn) {
+          verdict = await hooks.verdictFn({
+            piece,
+            round: piece.round,
+            oursPath,
+            barPath: barEv.path,
           });
+        } else if (hooks.visionCritic && pair.kind === "image") {
+          if (
+            !isVisualEvidencePath(pair.leftPath) ||
+            !isVisualEvidencePath(pair.rightPath)
+          ) {
+            throw new Error("Vision critic requires two image evidence files.");
+          }
+          if (!process.env.OPENROUTER_API_KEY) {
+            throw new Error(
+              "Vision critic requested but OPENROUTER_API_KEY is unset.",
+            );
+          }
+          try {
+            const v = await visionBlindCritic({
+              leftPath: pair.leftPath,
+              rightPath: pair.rightPath,
+              pieceName: piece.name,
+              maxTokens: remainingUsageLimits(meta).maxTokens,
+            });
+            meta = await accountModelUsage({
+              dir,
+              pieces,
+              source: "vision critic",
+              usage: v.usage,
+            });
+            haltAfterVerdict = !shouldContinue(meta);
+            verdict = {
+              winner: mapBlindWinner(v.winner, pair.leftIsOurs),
+              gap: v.gap,
+              confidence: v.confidence,
+              note: "vision-critic",
+            };
+          } catch (err) {
+            meta = await accountModelUsage({
+              dir,
+              pieces,
+              source: "vision critic",
+            });
+            throw new Error(
+              `Vision critic failed closed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        } else if (hooks.criticFn) {
+          const result = await hooks.criticFn(
+            prompt,
+            remainingUsageLimits(meta),
+          );
+          const raw = typeof result === "string" ? result : result.raw;
           meta = await accountModelUsage({
             dir,
             pieces,
-            source: "vision critic",
-            usage: v.usage,
+            source: "text critic",
+            usage: typeof result === "string" ? undefined : result.usage,
           });
           haltAfterVerdict = !shouldContinue(meta);
+          const parsed = parseCriticJson(raw);
           verdict = {
-            winner: mapBlindWinner(v.winner, pair.leftIsOurs),
-            gap: v.gap,
-            confidence: v.confidence,
-            note: "vision-critic",
+            winner: mapBlindWinner(parsed.winner, pair.leftIsOurs),
+            gap: parsed.gap,
+            confidence: parsed.confidence,
           };
-        } catch (err) {
-          meta = await accountModelUsage({
-            dir,
-            pieces,
-            source: "vision critic",
-          });
-          throw new Error(
-            `Vision critic failed closed: ${err instanceof Error ? err.message : String(err)}`,
-          );
+        } else {
+          verdict = await heuristicCritic(pair, meta.measurable);
         }
-      } else if (hooks.criticFn) {
-        const result = await hooks.criticFn(prompt, remainingUsageLimits(meta));
-        const raw = typeof result === "string" ? result : result.raw;
-        meta = await accountModelUsage({
-          dir,
-          pieces,
-          source: "text critic",
-          usage: typeof result === "string" ? undefined : result.usage,
+
+        await writeVerdict(dir, piece.id, piece.round, verdict);
+        piece.lastVerdict = verdict.winner;
+        piece.gap = verdict.winner === "bar" ? verdict.gap : null;
+
+        await writeCheckpoint(dir, {
+          runId,
+          savedAt: new Date().toISOString(),
+          pieceId: piece.id,
+          round: piece.round,
+          note: `verdict=${verdict.winner}`,
         });
-        haltAfterVerdict = !shouldContinue(meta);
-        const parsed = parseCriticJson(raw);
-        verdict = {
-          winner: mapBlindWinner(parsed.winner, pair.leftIsOurs),
-          gap: parsed.gap,
-          confidence: parsed.confidence,
-        };
-      } else {
-        verdict = await heuristicCritic(pair, meta.measurable);
-      }
 
-      await writeVerdict(dir, piece.id, piece.round, verdict);
-      piece.lastVerdict = verdict.winner;
-      piece.gap = verdict.winner === "bar" ? verdict.gap : null;
+        if (haltAfterVerdict) {
+          piece.status =
+            meta.status === "stopped_by_user" ? "stopped" : "pending";
+          await writePieces(dir, pieces);
+          await writeProgress(dir, meta, pieces);
+          await writeWorkbench(dir, meta, pieces);
+          break;
+        }
 
-      await writeCheckpoint(dir, {
-        runId,
-        savedAt: new Date().toISOString(),
-        pieceId: piece.id,
-        round: piece.round,
-        note: `verdict=${verdict.winner}`,
-      });
+        if (verdict.winner === "ours") {
+          const needsAdversarial = isRiskyPiece(
+            piece,
+            meta.riskyPieces,
+            meta.goal,
+          );
+          if (needsAdversarial) {
+            const auditPrompt = buildCriteriaAuditPrompt({
+              pieceName: piece.name,
+              artifactSummary: [
+                `artifact: ${built.artifactPath}`,
+                `openAs: ${built.openAs}`,
+                meta.acceptanceCriteria?.length
+                  ? `criteria: ${meta.acceptanceCriteria.join(" | ")}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n"),
+              acceptanceCriteria: meta.acceptanceCriteria ?? [],
+              mode: "adversarial",
+            });
+            let audit: AuditPass;
+            if (hooks.adversarialFn) {
+              audit = await hooks.adversarialFn({
+                piece,
+                artifactPath: built.artifactPath,
+                prompt: auditPrompt,
+              });
+            } else if (hooks.criticFn) {
+              const result = await hooks.criticFn(
+                auditPrompt,
+                remainingUsageLimits(meta),
+              );
+              const raw = typeof result === "string" ? result : result.raw;
+              meta = await accountModelUsage({
+                dir,
+                pieces,
+                source: "adversarial critic",
+                usage: typeof result === "string" ? undefined : result.usage,
+              });
+              if (!shouldContinue(meta)) {
+                piece.status =
+                  meta.status === "stopped_by_user" ? "stopped" : "pending";
+                await writePieces(dir, pieces);
+                await writeProgress(dir, meta, pieces);
+                await writeWorkbench(dir, meta, pieces);
+                break;
+              }
+              audit = parseAuditJson(raw);
+            } else {
+              audit = await heuristicAuditPass(built.artifactPath);
+            }
 
-      if (haltAfterVerdict) {
-        piece.status =
-          meta.status === "stopped_by_user" ? "stopped" : "pending";
-        await writePieces(dir, pieces);
-        await writeProgress(dir, meta, pieces);
-        await writeWorkbench(dir, meta, pieces);
-        break;
-      }
+            await writeFile(
+              path.join(
+                dir,
+                "evidence",
+                piece.id,
+                `round-${piece.round}`,
+                "adversarial.json",
+              ),
+              JSON.stringify(audit, null, 2) + "\n",
+              "utf8",
+            );
 
-      if (verdict.winner === "ours") {
-        piece.status = "won";
+            if (!audit.passed) {
+              piece.status = "pending";
+              piece.adversarialPassed = false;
+              piece.openFindings = audit.findings;
+              piece.gap = audit.gap || audit.findings[0] || "Adversarial FAIL.";
+              piece.lastVerdict = "bar";
+              await writePieces(dir, pieces);
+              meta.updatedAt = new Date().toISOString();
+              await writeMeta(dir, meta);
+              await writeProgress(dir, meta, pieces);
+              await writeWorkbench(dir, meta, pieces);
+              continue;
+            }
+            piece.adversarialPassed = true;
+            piece.openFindings = [];
+          }
+
+          piece.status = "won";
+          piece.gap = null;
+          if (!piece.openFindings) piece.openFindings = [];
+          await writePieces(dir, pieces);
+          meta.updatedAt = new Date().toISOString();
+          await writeMeta(dir, meta);
+          await writeProgress(dir, meta, pieces);
+          await writeWorkbench(dir, meta, pieces);
+          break;
+        }
+
+        piece.status = "pending";
         await writePieces(dir, pieces);
         meta.updatedAt = new Date().toISOString();
         await writeMeta(dir, meta);
         await writeProgress(dir, meta, pieces);
         await writeWorkbench(dir, meta, pieces);
-        break;
       }
+    }
 
-      piece.status = "pending";
-      await writePieces(dir, pieces);
+    meta = await readMeta(dir);
+    pieces = await readPieces(dir);
+    if (meta.status !== "running") break;
+
+    const allWon = pieces.every((p) => p.status === "won");
+    const anyStopped = pieces.some((p) => p.status === "stopped");
+    if (!allWon) {
+      if (anyStopped) {
+        meta.status = "stopped_by_user";
+        meta.updatedAt = new Date().toISOString();
+        await writeMeta(dir, meta);
+      }
+      break;
+    }
+
+    if (hooks.skipSmoothing) {
+      meta.smoothingPassed = true;
+      meta.smoothingGap = null;
+      meta.status = "completed";
+      meta.updatedAt = new Date().toISOString();
+      if (meta.climbUntilHumanStop) {
+        await writeFile(
+          path.join(dir, "CLIMB.md"),
+          `# Climb mode\n\nAll pieces won one blind pass against the bar.\nSmoothing skipped by hook.\nRun \`gauntlet stop\` when good enough.\n`,
+          "utf8",
+        );
+      }
+      await writeMeta(dir, meta);
+      break;
+    }
+
+    const pieceSummaries = pieces.map(
+      (p) =>
+        `- ${p.name}: status=${p.status} artifact=${p.artifactPath ?? "none"} rounds=${p.round}`,
+    );
+    const smoothPrompt = buildSmoothingPrompt({
+      goal: meta.goal,
+      pieceSummaries,
+      acceptanceCriteria: meta.acceptanceCriteria,
+    });
+    let smooth: AuditPass;
+    if (hooks.smoothingFn) {
+      smooth = await hooks.smoothingFn({
+        meta,
+        pieces,
+        prompt: smoothPrompt,
+      });
+    } else if (hooks.criticFn) {
+      const result = await hooks.criticFn(
+        smoothPrompt,
+        remainingUsageLimits(meta),
+      );
+      const raw = typeof result === "string" ? result : result.raw;
+      meta = await accountModelUsage({
+        dir,
+        pieces,
+        source: "smoothing critic",
+        usage: typeof result === "string" ? undefined : result.usage,
+      });
+      if (!shouldContinue(meta)) break;
+      smooth = parseAuditJson(raw);
+    } else {
+      smooth = await heuristicSmoothingPass(pieces);
+    }
+
+    await writeFile(
+      path.join(dir, "smoothing.json"),
+      JSON.stringify(smooth, null, 2) + "\n",
+      "utf8",
+    );
+    meta.smoothingPassed = smooth.passed;
+    meta.smoothingGap = smooth.passed ? null : smooth.gap;
+
+    if (smooth.passed) {
+      if (meta.climbUntilHumanStop) {
+        await writeFile(
+          path.join(dir, "CLIMB.md"),
+          `# Climb mode\n\nAll pieces won one blind pass against the bar.\nSmoothing clean.\nBar may still be above shipped quality (see apex-gp ~67/100).\nRun \`gauntlet stop\` when good enough, or \`gauntlet resume\` after resetting pieces to keep climbing.\n`,
+          "utf8",
+        );
+      }
+      meta.status = "completed";
       meta.updatedAt = new Date().toISOString();
       await writeMeta(dir, meta);
-      await writeProgress(dir, meta, pieces);
-      await writeWorkbench(dir, meta, pieces);
+      await writePieces(dir, pieces);
+      break;
     }
+
+    const target =
+      pieces[pieces.length - 1] ?? pieces.find((p) => p.status === "won");
+    if (target) {
+      target.status = "pending";
+      target.gap = smooth.gap || smooth.findings[0] || "Smoothing FAIL.";
+      target.openFindings = smooth.findings;
+      target.lastVerdict = "bar";
+    }
+    meta.status = "running";
+    meta.updatedAt = new Date().toISOString();
+    await writeMeta(dir, meta);
+    await writePieces(dir, pieces);
+    await writeProgress(dir, meta, pieces);
+    await writeWorkbench(dir, meta, pieces);
+
+    smoothingWave += 1;
+    if (smoothingWave > maxSmoothingWaves) break;
   }
 
   meta = await readMeta(dir);
   pieces = await readPieces(dir);
-  if (meta.status === "running") {
-    const allWon = pieces.every((p) => p.status === "won");
-    const anyStopped = pieces.some((p) => p.status === "stopped");
-    if (allWon && meta.climbUntilHumanStop) {
-      // Apex climb: cleared once — human/budget is the real brake
-      await writeFile(
-        path.join(dir, "CLIMB.md"),
-        `# Climb mode\n\nAll pieces won one blind pass against the bar.\nBar may still be above shipped quality (see apex-gp ~67/100).\nRun \`gauntlet stop\` when good enough, or \`gauntlet resume\` after resetting pieces to keep climbing.\n`,
-        "utf8",
-      );
-      // Stay running until human stop — mark completed for ledger practicality
-      // but leave climb flag documented. Prefer completed so CLI exits cleanly;
-      // user resumes for another wave.
-      meta.status = "completed";
-    } else if (allWon) meta.status = "completed";
-    else if (anyStopped) meta.status = "stopped_by_user";
-  }
   meta.updatedAt = new Date().toISOString();
   await writeMeta(dir, meta);
   await writeProgress(dir, meta, pieces);

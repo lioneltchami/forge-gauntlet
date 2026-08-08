@@ -28,6 +28,7 @@ npm run web    # http://localhost:8787 — 4-step local UI
 | ------------------------------ | ----------------------------------------------------------- |
 | `propose "<goal>"`             | Offer 2–3 named bars, then stop                             |
 | `compose --bar … --goal …`     | Spisak-shaped orchestrator prompt (paste into Claude/Codex) |
+| `compose --plan file.md        | html`                                                       | Extract criteria/gates; emit prompt + ≤3 gap bullets |
 | `run --bar … --goal …`         | Validate bar, ledger, builder↔critic loop                   |
 | `status` / `stop` / `resume`   | Live progress, human brake, continue                        |
 | `shot --url …` / `compare a b` | Apex-style named captures + smoke compare                   |
@@ -40,11 +41,13 @@ Ledger: `runs/<id>/` → `progress.md`, `workbench.md`, `ORCHESTRATOR.md`, `CONT
 ## Skill
 
 ```bash
-mkdir -p ~/.cursor/skills/gauntlet
-cp -R skill/* ~/.cursor/skills/gauntlet/
+# Cursor / Claude Code skill install
+mkdir -p ~/.cursor/skills/gauntlet && cp -R skill/* ~/.cursor/skills/gauntlet/
+# Or skills-add layout:
+# npx skills add <this-repo>  → skills/gauntlet/
 ```
 
-Triggers: `/gauntlet`, “beat this bar”, “compose gauntlet”.
+Triggers: `/gauntlet`, “beat this bar”, “compose gauntlet”, “gauntlet this plan”.
 
 ## Modes
 

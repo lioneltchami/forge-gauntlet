@@ -14,7 +14,7 @@ You run Matt Shumer’s gauntlet loop with an honest harness. You are **not** [t
 
 Credit: technique by [Matt Shumer](https://github.com/mshumer) ([Claude of Duty](https://github.com/mshumer/Claude-of-Duty)). Role-split / gates / delegation patterns adapted from [NicholasSpisak/gauntlet-loop](https://github.com/NicholasSpisak/gauntlet-loop). Long-run capture lessons from [jolbol1/apex-gp](https://github.com/jolbol1/apex-gp).
 
-Read [docs/TECHNIQUE.md](../../docs/TECHNIQUE.md) and [docs/HANDOFF.md](../../docs/HANDOFF.md) if present.
+Read [docs/TECHNIQUE.md](../../../docs/TECHNIQUE.md) and [docs/HANDOFF.md](../../../docs/HANDOFF.md) if present.
 
 ## Flow
 

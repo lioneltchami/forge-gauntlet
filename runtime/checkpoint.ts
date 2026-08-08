@@ -143,13 +143,22 @@ export async function writeWorkbench(
       ? `Accounting: **${meta.budgetState.exhausted ? "BLOCKED" : "WARNING"}** — ${meta.budgetState.accountingError}`
       : "",
     "",
-    "| Piece | Status | Round | Verdict | Gap / Error |",
-    "|---|---|---:|---|---|",
-    ...pieces.map(
-      (p) =>
-        `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"} | ${p.error ?? p.gap ?? "—"} |`,
-    ),
+    "| Piece | Status | Rounds | Verdict | Open findings | Gap / Error |",
+    "|---|---|---:|---|---|---|",
+    ...pieces.map((p) => {
+      const findings = p.openFindings?.length ? p.openFindings.join("; ") : "—";
+      const adv =
+        p.adversarialPassed === true
+          ? " · adv✓"
+          : p.adversarialPassed === false
+            ? " · adv✗"
+            : "";
+      return `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"}${adv} | ${findings} | ${p.error ?? p.gap ?? "—"} |`;
+    }),
     "",
+    meta.smoothingPassed != null
+      ? `## Smoothing\n\n${meta.smoothingPassed ? "Passed." : `Open: ${meta.smoothingGap ?? "coherence gap"}`}`
+      : "",
     "## Human gates",
     ...(meta.humanGates?.length
       ? meta.humanGates.map((g) => `- [ ] ${g}`)
@@ -158,7 +167,11 @@ export async function writeWorkbench(
     "_You are the brake. `gauntlet stop` anytime. Gates outrank the loop._",
     "",
   ];
-  await writeFile(path.join(dir, "workbench.md"), lines.join("\n"), "utf8");
+  await writeFile(
+    path.join(dir, "workbench.md"),
+    lines.filter((l) => l !== undefined).join("\n"),
+    "utf8",
+  );
 }
 
 export async function ensureDispatchDir(runDirPath: string) {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import { openRouterCriticWithUsage } from "../adapters/openrouter.js";
@@ -12,7 +13,7 @@ import {
   validateBar,
 } from "../runtime/bar.js";
 import { resumeRun } from "../runtime/checkpoint.js";
-import { composeSystemPrompt } from "../runtime/compose.js";
+import { composeFromPlan, composeWithGaps } from "../runtime/compose.js";
 import {
   findActiveRunId,
   readMeta,
@@ -92,12 +93,14 @@ program
   .requiredOption("--goal <goal>", "Goal or path note")
   .requiredOption("--bar <idOrUrl>", "Bar id or URL")
   .option("--bar-name <name>", "Bar name when URL")
+  .option("--plan <path>", "Plan/spec .md or .html — extract criteria/gates")
   .option("--stack <stack>", "Stack")
   .option("--agent <env>", "cursor | claude-code | codex | generic")
   .option("--implementer <who>", "codex | claude | cursor | local")
   .option("--mode <mode>", "standard | apex", "standard")
   .option("--criterion <c>", "Acceptance criterion (repeatable)", collect, [])
   .option("--gate <g>", "Human gate (repeatable)", collect, [])
+  .option("--json", "Emit { systemPrompt, gaps } JSON")
   .action(async (opts) => {
     const goal = opts.goal as string;
     const bar = resolveBar(goal, opts.bar as string, opts.barName as string);
@@ -108,7 +111,9 @@ program
     const agentEnv =
       (opts.agent as "cursor" | "claude-code" | "codex" | "generic") ??
       detectAgentEnv();
-    const text = composeSystemPrompt({
+    const criteria = opts.criterion as string[];
+    const gates = opts.gate as string[];
+    const base = {
       goal,
       barName: bar.name,
       barUrl: bar.url,
@@ -117,11 +122,36 @@ program
       implementer: opts.implementer as
         "codex" | "claude" | "cursor" | "local" | undefined,
       mode: opts.mode as "standard" | "apex",
-      acceptanceCriteria: opts.criterion as string[],
-      humanGates: opts.gate as string[],
-      derived: !(opts.criterion as string[]).length,
-    });
-    console.log(text);
+      acceptanceCriteria: criteria,
+      humanGates: gates,
+      derived: !criteria.length,
+    };
+
+    let result: { systemPrompt: string; gaps: string[] };
+    if (opts.plan) {
+      const planPath = path.resolve(opts.plan as string);
+      const planText = await readFile(planPath, "utf8");
+      result = composeFromPlan({
+        ...base,
+        planText,
+        planPath,
+        acceptanceCriteria: criteria.length ? criteria : undefined,
+        humanGates: gates.length ? gates : undefined,
+        derived: criteria.length ? false : undefined,
+      });
+    } else {
+      result = composeWithGaps(base);
+    }
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(result.systemPrompt);
+    if (result.gaps.length) {
+      console.log("\n## Gaps\n");
+      for (const g of result.gaps) console.log(`- ${g}`);
+    }
   });
 
 program

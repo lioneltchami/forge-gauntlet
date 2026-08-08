@@ -132,11 +132,20 @@ export function renderProgress(meta: RunMeta, pieces: Piece[]): string {
   }
   lines.push(`**Updated:** ${meta.updatedAt}`);
   lines.push("");
-  lines.push("| Piece | Status | Round | Last verdict | Gap / Error |");
-  lines.push("|---|---|---:|---|---|");
+  lines.push(
+    "| Piece | Status | Rounds | Verdict | Open findings | Gap / Error |",
+  );
+  lines.push("|---|---|---:|---|---|---|");
   for (const p of pieces) {
+    const findings = p.openFindings?.length ? p.openFindings.join("; ") : "—";
     lines.push(
-      `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"} | ${p.error ?? p.gap ?? "—"} |`,
+      `| ${p.name} | ${p.status} | ${p.round} | ${p.lastVerdict ?? "—"}${p.adversarialPassed === true ? " · adv✓" : p.adversarialPassed === false ? " · adv✗" : ""} | ${findings} | ${p.error ?? p.gap ?? "—"} |`,
+    );
+  }
+  if (meta.smoothingPassed != null) {
+    lines.push("");
+    lines.push(
+      `**Smoothing:** ${meta.smoothingPassed ? "passed" : `open — ${meta.smoothingGap ?? "gap"}`}`,
     );
   }
   lines.push("");

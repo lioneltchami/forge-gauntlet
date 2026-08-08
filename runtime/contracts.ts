@@ -3,30 +3,30 @@
  * implementer never grades; critic is fresh + blind.
  */
 export type RoleSplit = {
-	orchestrator: "claude" | "cursor" | "human";
-	implementer: "codex" | "claude" | "cursor" | "local";
-	critic: "vision" | "text" | "heuristic" | "subagent";
+  orchestrator: "claude" | "cursor" | "human";
+  implementer: "codex" | "claude" | "cursor" | "local";
+  critic: "vision" | "text" | "heuristic" | "subagent";
 };
 
 export function buildDelegationXml(args: {
-	pieceName: string;
-	goal: string;
-	gap: string | null;
-	artifactHint: string;
-	runDir: string;
-	humanGates: string[];
-	safetyNever: string[];
+  pieceName: string;
+  goal: string;
+  gap: string | null;
+  artifactHint: string;
+  runDir: string;
+  humanGates: string[];
+  safetyNever: string[];
 }): string {
-	const gates =
-		args.humanGates.length > 0
-			? args.humanGates.join("; ")
-			: "spend over budget; production promotion; credential provisioning; irreversible mutation";
-	const never =
-		args.safetyNever.length > 0
-			? args.safetyNever.join("; ")
-			: "commit secrets/PII; invent bar evidence; soft-score your own work";
+  const gates =
+    args.humanGates.length > 0
+      ? args.humanGates.join("; ")
+      : "spend over budget; production promotion; credential provisioning; irreversible mutation";
+  const never =
+    args.safetyNever.length > 0
+      ? args.safetyNever.join("; ")
+      : "commit secrets/PII; invent bar evidence; soft-score your own work";
 
-	return `<task>
+  return `<task>
 Piece: ${args.pieceName}
 Goal: ${args.goal}
 Run dir: ${args.runDir}
@@ -54,9 +54,24 @@ Scope to this piece only. Never: ${never}.
 }
 
 export const HOSTILE_CRITIC_INSTRUCTION = [
-	"You are a hostile acceptance auditor. Assume the work is wrong until evidence proves otherwise.",
-	"You receive unlabeled A/B evidence only — never builder notes or prior drafts.",
-	"Pick A or B. Binary. One gap sentence for the loser.",
-	"Work must win against the reference. Tie = bar wins for the loop.",
-	'JSON only: {"winner":"A"|"B","gap":"...","confidence":0.0-1.0}',
+  "You are a hostile acceptance auditor. Assume the work is wrong until evidence proves otherwise.",
+  "You receive unlabeled A/B evidence only — never builder notes or prior drafts.",
+  "Pick A or B. Binary. One gap sentence for the loser.",
+  "Work must win against the reference. Tie = bar wins for the loop.",
+  "When criteria exist: criterion → evidence map; one unproven criterion = FAIL.",
+  "Second-order: empty states, retries, races, rollback, injection, secrets/PII.",
+  'JSON only: {"winner":"A"|"B","gap":"...","confidence":0.0-1.0}',
+].join(" ");
+
+export const ADVERSARIAL_INSTRUCTION = [
+  "Independent adversarial second opinion for risky pieces.",
+  "Every surviving finding is a FAIL. Do not soften. Do not suggest fixes.",
+  'JSON: {"passed":boolean,"findings":["criterion → missing evidence"],"gap":"..."}',
+].join(" ");
+
+export const SMOOTHING_INSTRUCTION = [
+  "Fresh critic on the integrated whole after all pieces win blind.",
+  "Hunt coherence seams, tone mismatch, dead ends, second-order failures.",
+  "Findings loop back before acceptance — satisfaction of the orchestrator is not enough.",
+  'JSON: {"passed":boolean,"findings":[...],"gap":"..."}',
 ].join(" ");

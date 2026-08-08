@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -714,5 +714,100 @@ describe("compose", () => {
     assert.match(text, /Stripe pricing/);
     assert.match(text, /Apex/);
     assert.match(text, /claude is the sole implementer/i);
+    assert.match(text, /smoothing/i);
+    assert.match(text, /Adversarial/i);
+  });
+});
+
+describe("adversarial + smoothing", () => {
+  it("reopens risky piece when adversarial fails, then completes", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "gauntlet-adv-"));
+    try {
+      const { runId, dir } = await createRun({
+        goal: "secure auth flow. pieces: auth",
+        bar: { id: "a", name: "Example", url: "https://example.com" },
+        cwd,
+        skipBarFetch: true,
+        riskyPieces: ["auth"],
+      });
+      let advCalls = 0;
+      const final = await runLoop(
+        runId,
+        {
+          maxRoundsPerPiece: 4,
+          screenshotFn: testScreenshot,
+          verdictFn: async () => ({
+            winner: "ours" as const,
+            gap: "",
+            confidence: 1,
+          }),
+          adversarialFn: async () => {
+            advCalls += 1;
+            if (advCalls === 1) {
+              return {
+                passed: false,
+                gap: "MFA missing",
+                findings: ["auth → MFA missing"],
+              };
+            }
+            return { passed: true, gap: "", findings: [] };
+          },
+        },
+        cwd,
+      );
+      assert.equal(final.status, "completed");
+      assert.equal(final.smoothingPassed, true);
+      assert.ok(advCalls >= 2);
+      const wb = await readFile(path.join(dir, "workbench.md"), "utf8");
+      assert.match(wb, /Open findings|Rounds/i);
+      const smooth = JSON.parse(
+        await readFile(path.join(dir, "smoothing.json"), "utf8"),
+      );
+      assert.equal(smooth.passed, true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("smoothing failure reopens piece within wave budget", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "gauntlet-smooth-"));
+    try {
+      const { runId } = await createRun({
+        goal: "tiny page. pieces: hero",
+        bar: { id: "a", name: "Example", url: "https://example.com" },
+        cwd,
+        skipBarFetch: true,
+      });
+      let smoothCalls = 0;
+      const final = await runLoop(
+        runId,
+        {
+          maxRoundsPerPiece: 6,
+          screenshotFn: testScreenshot,
+          verdictFn: async () => ({
+            winner: "ours" as const,
+            gap: "",
+            confidence: 1,
+          }),
+          smoothingFn: async () => {
+            smoothCalls += 1;
+            if (smoothCalls === 1) {
+              return {
+                passed: false,
+                gap: "Tone mismatch across pieces",
+                findings: ["coherence → tone"],
+              };
+            }
+            return { passed: true, gap: "", findings: [] };
+          },
+        },
+        cwd,
+      );
+      assert.equal(final.status, "completed");
+      assert.equal(final.smoothingPassed, true);
+      assert.ok(smoothCalls >= 2);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 });
