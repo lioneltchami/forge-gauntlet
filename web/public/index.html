@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gauntlet — beat a real bar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0c0f;
+        --panel: #12161c;
+        --ink: #e9ecef;
+        --muted: #8b939c;
+        --line: #2a313a;
+        --accent: #c8f542;
+        --warn: #ffb020;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(
+            ellipse 80% 50% at 0% -10%,
+            #1a2e22 0%,
+            transparent 55%
+          ),
+          radial-gradient(
+            ellipse 60% 40% at 100% 0%,
+            #1a222e 0%,
+            transparent 50%
+          ),
+          var(--bg);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 4rem;
+      }
+      .brand {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.75rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 0.75rem;
+      }
+      h1 {
+        font-size: clamp(1.75rem, 4vw, 2.4rem);
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        margin: 0 0 0.5rem;
+        max-width: 16ch;
+      }
+      .lede {
+        color: var(--muted);
+        max-width: 40ch;
+        margin: 0 0 1.75rem;
+      }
+      .steps {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.5rem;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.7rem;
+      }
+      .step-pill {
+        padding: 0.35rem 0.65rem;
+        border: 1px solid var(--line);
+        color: var(--muted);
+      }
+      .step-pill.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .step-pill.done {
+        color: var(--ink);
+        border-color: #3d4a38;
+      }
+      label {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin: 0 0 0.35rem;
+      }
+      textarea,
+      input,
+      select {
+        width: 100%;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        padding: 0.75rem 0.9rem;
+        font: inherit;
+        margin-bottom: 1rem;
+      }
+      textarea {
+        min-height: 4.5rem;
+        resize: vertical;
+      }
+      .row {
+        display: flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+      button {
+        background: var(--accent);
+        color: #0a1208;
+        border: 0;
+        font-weight: 600;
+        padding: 0.7rem 1.1rem;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      button.danger {
+        background: transparent;
+        border: 1px solid var(--warn);
+        color: var(--warn);
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
+      }
+      .bar {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--panel);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        padding: 0.85rem 1rem;
+      }
+      .bar.selected {
+        border-color: var(--accent);
+      }
+      .bar .sub {
+        display: block;
+        color: var(--muted);
+        font-size: 0.8rem;
+        margin-top: 0.25rem;
+        font-weight: 400;
+      }
+      pre {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        padding: 1rem;
+        overflow: auto;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        font-family: "IBM Plex Mono", monospace;
+        max-height: 280px;
+      }
+      .ok {
+        color: var(--accent);
+        font-size: 0.85rem;
+      }
+      .bad {
+        color: #ff6b6b;
+        font-size: 0.85rem;
+      }
+      footer {
+        margin-top: 2.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">Gauntlet Runtime</div>
+      <h1>Beat a real bar.</h1>
+      <p class="lede">
+        Quality loop with evidence — not nine models in one chat. You are the
+        brake.
+      </p>
+
+      <div class="steps" id="steps">
+        <span class="step-pill on" data-s="1">01 Goal</span>
+        <span class="step-pill" data-s="2">02 Bar</span>
+        <span class="step-pill" data-s="3">03 Mode</span>
+        <span class="step-pill" data-s="4">04 Run</span>
+      </div>
+
+      <section class="panel active" id="p1">
+        <label for="goal">What are you building?</label>
+        <textarea
+          id="goal"
+          placeholder="a dark athletic landing page for a running brand"
+        ></textarea>
+        <div class="row">
+          <button type="button" id="toBars">Propose bars</button>
+        </div>
+      </section>
+
+      <section class="panel" id="p2">
+        <label>Pick a named, fetchable bar</label>
+        <div id="bars"></div>
+        <p id="barStatus"></p>
+        <div class="row">
+          <button type="button" class="ghost" id="back1">Back</button>
+          <button type="button" id="toMode" disabled>
+            Validate &amp; continue
+          </button>
+        </div>
+      </section>
+
+      <section class="panel" id="p3">
+        <label for="mode">Mode</label>
+        <select id="mode">
+          <option value="standard">Standard — win blind or stop</option>
+          <option value="apex">
+            Apex / climb — long runs (needs Max/Codex budget)
+          </option>
+        </select>
+        <label for="agent">Agent verbs</label>
+        <select id="agent">
+          <option value="cursor">Cursor</option>
+          <option value="claude-code">Claude Code</option>
+          <option value="codex">Codex</option>
+          <option value="generic">Generic</option>
+        </select>
+        <label for="maxUsd">Optional USD budget gate</label>
+        <input
+          id="maxUsd"
+          type="number"
+          min="0"
+          step="1"
+          placeholder="e.g. 50"
+        />
+        <label>Orchestrator preview</label>
+        <pre id="composePreview">Pick options, then refresh preview.</pre>
+        <div class="row">
+          <button type="button" class="ghost" id="back2">Back</button>
+          <button type="button" class="ghost" id="refreshCompose">
+            Refresh prompt
+          </button>
+          <button type="button" class="ghost" id="composeOnly">
+            Compose only
+          </button>
+          <button type="button" id="startRun">Run gauntlet</button>
+        </div>
+      </section>
+
+      <section class="panel" id="p4">
+        <div class="row">
+          <button type="button" class="danger" id="stopBtn">Stop run</button>
+          <button type="button" class="ghost" id="newRun">New run</button>
+        </div>
+        <label>Live progress</label>
+        <pre id="progress">Starting…</pre>
+        <label>Aim / notes</label>
+        <pre id="notes"></pre>
+      </section>
+
+      <footer>
+        Technique by Matt Shumer. Role-split ideas from Nicholas Spisak.
+        Long-run lessons from apex-gp. Free local budget resets daily. Protocol
+        proven — apex-class outcomes need your model plan + vision critic.
+      </footer>
+    </main>
+    <script>
+      let step = 1;
+      let selectedBar = null;
+      let lastRunId = null;
+      let pollTimer = null;
+
+      const goalEl = document.getElementById("goal");
+      const barsEl = document.getElementById("bars");
+      const barStatus = document.getElementById("barStatus");
+      const composePreview = document.getElementById("composePreview");
+      const progressEl = document.getElementById("progress");
+      const notesEl = document.getElementById("notes");
+
+      function show(n) {
+        step = n;
+        document
+          .querySelectorAll(".panel")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById("p" + n).classList.add("active");
+        document.querySelectorAll(".step-pill").forEach((pill) => {
+          const s = Number(pill.dataset.s);
+          pill.classList.toggle("on", s === n);
+          pill.classList.toggle("done", s < n);
+        });
+      }
+
+      document.getElementById("toBars").onclick = async () => {
+        const goal = goalEl.value.trim();
+        if (!goal) return;
+        barsEl.innerHTML = "";
+        selectedBar = null;
+        document.getElementById("toMode").disabled = true;
+        barStatus.textContent = "";
+        const res = await fetch("/api/propose", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ goal }),
+        });
+        const data = await res.json();
+        for (const b of data.bars || []) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "bar";
+          btn.innerHTML =
+            b.name + (b.url ? `<span class="sub">${b.url}</span>` : "");
+          btn.onclick = () => {
+            selectedBar = b;
+            [...barsEl.children].forEach((c) => c.classList.remove("selected"));
+            btn.classList.add("selected");
+            document.getElementById("toMode").disabled = false;
+          };
+          barsEl.appendChild(btn);
+        }
+        show(2);
+      };
+
+      document.getElementById("back1").onclick = () => show(1);
+      document.getElementById("back2").onclick = () => show(2);
+
+      document.getElementById("toMode").onclick = async () => {
+        if (!selectedBar) return;
+        barStatus.textContent = "Validating bar…";
+        const res = await fetch("/api/validate-bar", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ bar: selectedBar }),
+        });
+        const data = await res.json();
+        if (!data.validation?.ok) {
+          barStatus.className = "bad";
+          barStatus.textContent =
+            "Bar failed: " + (data.validation?.reasons || []).join(" ");
+          return;
+        }
+        barStatus.className = "ok";
+        barStatus.textContent = "Bar fetchable. Continue.";
+        show(3);
+        document.getElementById("refreshCompose").click();
+      };
+
+      async function composeBody(extra = {}) {
+        return {
+          goal: goalEl.value.trim(),
+          bar: selectedBar,
+          mode: document.getElementById("mode").value,
+          agent: document.getElementById("agent").value,
+          ...extra,
+        };
+      }
+
+      document.getElementById("refreshCompose").onclick = async () => {
+        const res = await fetch("/api/compose", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(await composeBody()),
+        });
+        const data = await res.json();
+        composePreview.textContent = data.systemPrompt || data.error || "—";
+      };
+
+      async function start(composeOnly) {
+        const maxUsd = document.getElementById("maxUsd").value;
+        const body = {
+          ...(await composeBody()),
+          composeOnly,
+          maxUsd: maxUsd ? Number(maxUsd) : undefined,
+        };
+        const res = await fetch("/api/runs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || "Failed");
+          return;
+        }
+        lastRunId = data.runId;
+        notesEl.textContent = (data.systemPrompt || data.aimPrompt || "").slice(
+          0,
+          4000,
+        );
+        show(4);
+        if (composeOnly) {
+          progressEl.textContent =
+            "Compose only — paste ORCHESTRATOR from the run folder / notes into Claude or Codex.\nRun id: " +
+            lastRunId;
+          return;
+        }
+        progressEl.textContent = "Run " + lastRunId + " started…";
+        poll(lastRunId);
+      }
+
+      document.getElementById("composeOnly").onclick = () => start(true);
+      document.getElementById("startRun").onclick = () => start(false);
+
+      async function poll(id) {
+        clearTimeout(pollTimer);
+        const res = await fetch("/api/runs/" + id);
+        const data = await res.json();
+        progressEl.textContent = data.progress || JSON.stringify(data, null, 2);
+        const st = data.meta?.status;
+        if (st === "running" || st === "proposed") {
+          pollTimer = setTimeout(() => poll(id), 1200);
+        }
+      }
+
+      document.getElementById("stopBtn").onclick = async () => {
+        const res = await fetch("/api/stop", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runId: lastRunId }),
+        });
+        progressEl.textContent = JSON.stringify(await res.json(), null, 2);
+      };
+
+      document.getElementById("newRun").onclick = () => {
+        clearTimeout(pollTimer);
+        selectedBar = null;
+        lastRunId = null;
+        show(1);
+      };
+    </script>
+  </body>
+</html>
