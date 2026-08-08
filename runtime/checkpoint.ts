@@ -1,7 +1,7 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Piece, RunMeta } from "./types.js";
 import {
+  clearStopRequest,
   readMeta,
   readPieces,
   runDir,
@@ -9,6 +9,7 @@ import {
   writePieces,
   writeProgress,
 } from "./ledger.js";
+import type { Piece, RunMeta } from "./types.js";
 
 export type Budget = {
   maxUsd?: number;
@@ -17,6 +18,12 @@ export type Budget = {
   usedTokens: number;
   /** When true, loop must STOP even if pieces remain. */
   exhausted: boolean;
+  accountingError?: string;
+};
+
+export type UsageDelta = {
+  tokens?: number;
+  usd?: number;
 };
 
 export function emptyBudget(maxUsd?: number, maxTokens?: number): Budget {
@@ -25,15 +32,23 @@ export function emptyBudget(maxUsd?: number, maxTokens?: number): Budget {
     maxTokens,
     usedUsd: 0,
     usedTokens: 0,
-    exhausted: false,
+    exhausted:
+      (maxUsd != null && maxUsd <= 0) || (maxTokens != null && maxTokens <= 0),
   };
 }
 
 export function recordUsage(b: Budget, tokens: number, usd: number): Budget {
+  if (!Number.isFinite(tokens) || tokens < 0) {
+    throw new Error(`Invalid token usage: ${tokens}`);
+  }
+  if (!Number.isFinite(usd) || usd < 0) {
+    throw new Error(`Invalid USD usage: ${usd}`);
+  }
   const next = {
     ...b,
     usedTokens: b.usedTokens + tokens,
     usedUsd: b.usedUsd + usd,
+    accountingError: undefined,
   };
   next.exhausted =
     (next.maxTokens != null && next.usedTokens >= next.maxTokens) ||
@@ -88,6 +103,7 @@ export async function resumeRun(
   if (meta.budgetState?.exhausted) {
     throw new Error("Budget exhausted — raise budget before resume.");
   }
+  await clearStopRequest(dir);
   meta.status = "running";
   meta.updatedAt = new Date().toISOString();
   for (const p of pieces) {
@@ -121,6 +137,9 @@ export async function writeWorkbench(
     `Bar: ${meta.bar.name}`,
     meta.budgetState
       ? `Budget: $${meta.budgetState.usedUsd.toFixed(2)}${meta.budgetState.maxUsd != null ? ` / $${meta.budgetState.maxUsd}` : ""} · tokens ${meta.budgetState.usedTokens}${meta.budgetState.maxTokens != null ? ` / ${meta.budgetState.maxTokens}` : ""}`
+      : "",
+    meta.budgetState?.accountingError
+      ? `Accounting: **${meta.budgetState.exhausted ? "BLOCKED" : "WARNING"}** — ${meta.budgetState.accountingError}`
       : "",
     "",
     "| Piece | Status | Round | Verdict | Gap |",

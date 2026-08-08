@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { Command } from "commander";
-import { openRouterCritic } from "../adapters/openrouter.js";
+import { openRouterCriticWithUsage } from "../adapters/openrouter.js";
 import { portableVerbs } from "../adapters/verbs.js";
 import { detectAgentEnv } from "../runtime/aim-prompt.js";
 import { captureNamedShots, compareFrames } from "../runtime/apex/capture.js";
@@ -223,9 +223,7 @@ program
       dispatchOnly: Boolean(opts.dispatchOnly),
       spawnAgent: Boolean(opts.spawnAgent),
       spawnDryRun: Boolean(opts.spawnDry),
-      spawnTimeoutMs: opts.spawnTimeout
-        ? Number(opts.spawnTimeout)
-        : undefined,
+      spawnTimeoutMs: opts.spawnTimeout ? Number(opts.spawnTimeout) : undefined,
       spawnKind:
         meta.implementer === "codex" || meta.agentEnv === "codex"
           ? "codex"
@@ -235,7 +233,9 @@ program
       console.log("Auto vision critic: OPENROUTER_API_KEY detected.");
     }
     if (opts.maxRounds) hooks.maxRoundsPerPiece = Number(opts.maxRounds);
-    if (opts.llmCritic) hooks.criticFn = (prompt) => openRouterCritic(prompt);
+    if (opts.llmCritic)
+      hooks.criticFn = (prompt, limits) =>
+        openRouterCriticWithUsage(prompt, { maxTokens: limits.maxTokens });
 
     const final = await runLoop(runId, hooks, opts.cwd as string);
     const pieces = await readPieces(dir);
@@ -263,7 +263,9 @@ program
       visionCritic: Boolean(opts.visionCritic),
     };
     if (opts.maxRounds) hooks.maxRoundsPerPiece = Number(opts.maxRounds);
-    if (opts.llmCritic) hooks.criticFn = (p) => openRouterCritic(p);
+    if (opts.llmCritic)
+      hooks.criticFn = (prompt, limits) =>
+        openRouterCriticWithUsage(prompt, { maxTokens: limits.maxTokens });
     const final = await runLoop(id, hooks, opts.cwd as string);
     console.log(renderProgress(final, await readPieces(runDir(id, opts.cwd))));
   });
@@ -337,7 +339,10 @@ program
   .description("Compare two frames (hash smoke or --grid edge-energy)")
   .argument("<a>", "Image A (PNG for --grid)")
   .argument("<b>", "Image B (PNG for --grid)")
-  .option("--grid [n]", "Apex-style grid edge-energy compare (default 6 when flag present)")
+  .option(
+    "--grid [n]",
+    "Apex-style grid edge-energy compare (default 6 when flag present)",
+  )
   .option("--out <path>", "Write markdown report path")
   .action(async (a: string, b: string, opts) => {
     if (opts.grid !== undefined) {
@@ -451,7 +456,8 @@ h1{font-size:clamp(3rem,10vw,7rem);letter-spacing:-.04em}</style></head>
     };
 
     if (opts.llmCritic) {
-      hooks.criticFn = (prompt) => openRouterCritic(prompt);
+      hooks.criticFn = (prompt, limits) =>
+        openRouterCriticWithUsage(prompt, { maxTokens: limits.maxTokens });
     } else {
       hooks.verdictFn = async ({ round }) =>
         round <= 1

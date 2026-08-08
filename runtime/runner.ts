@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   writeBuilderDispatch,
   writeCriticDispatch,
@@ -15,7 +16,13 @@ import { visionBlindCritic } from "../adapters/vision-critic.js";
 import { detectAgentEnv, writeAimPrompt } from "./aim-prompt.js";
 import { writeContractFile } from "./apex/capture.js";
 import { inferGoalType, proposeBars, validateBar } from "./bar.js";
-import { emptyBudget, writeCheckpoint, writeWorkbench } from "./checkpoint.js";
+import {
+  emptyBudget,
+  recordUsage,
+  type UsageDelta,
+  writeCheckpoint,
+  writeWorkbench,
+} from "./checkpoint.js";
 import { composeSystemPrompt } from "./compose.js";
 import {
   buildBlindCriticPrompt,
@@ -28,6 +35,8 @@ import { decompose } from "./decompose.js";
 import {
   copyEvidence,
   fetchTextEvidence,
+  normalizeTextEvidence,
+  type ScreenshotFn,
   screenshotUrl,
 } from "./evidence/index.js";
 import {
@@ -74,7 +83,10 @@ export type CreateRunOptions = {
 };
 
 export type RoundHooks = {
-  criticFn?: (prompt: string) => Promise<string>;
+  criticFn?: (
+    prompt: string,
+    limits: { maxTokens?: number; maxUsd?: number },
+  ) => Promise<string | { raw: string; usage?: UsageDelta }>;
   visionCritic?: boolean;
   verdictFn?: (ctx: {
     piece: Piece;
@@ -96,7 +108,73 @@ export type RoundHooks = {
   spawnKind?: AgentKind;
   spawnDryRun?: boolean;
   spawnTimeoutMs?: number;
+  screenshotFn?: ScreenshotFn;
 };
+
+function isVisualEvidencePath(filePath: string): boolean {
+  return /\.(png|jpe?g|webp)$/i.test(filePath);
+}
+
+function remainingUsageLimits(meta: RunMeta): {
+  maxTokens?: number;
+  maxUsd?: number;
+} {
+  const budget = meta.budgetState;
+  return {
+    maxTokens:
+      budget?.maxTokens != null
+        ? Math.max(0, budget.maxTokens - budget.usedTokens)
+        : undefined,
+    maxUsd:
+      budget?.maxUsd != null
+        ? Math.max(0, budget.maxUsd - budget.usedUsd)
+        : undefined,
+  };
+}
+
+async function accountModelUsage(args: {
+  dir: string;
+  pieces: Piece[];
+  source: string;
+  usage?: UsageDelta;
+}): Promise<RunMeta> {
+  const latest = await readMeta(args.dir);
+  const budget = latest.budgetState ?? emptyBudget();
+  const hasCap = budget.maxTokens != null || budget.maxUsd != null;
+
+  if (args.usage) {
+    const missingRequiredUsage =
+      (budget.maxTokens != null && args.usage.tokens == null) ||
+      (budget.maxUsd != null && args.usage.usd == null);
+    latest.budgetState = recordUsage(
+      budget,
+      args.usage.tokens ?? 0,
+      args.usage.usd ?? 0,
+    );
+    if (missingRequiredUsage) {
+      latest.budgetState.exhausted = true;
+      latest.budgetState.accountingError =
+        `${args.source} did not report required ` +
+        `${budget.maxTokens != null && args.usage.tokens == null ? "token" : "cost"} usage`;
+    }
+  } else {
+    latest.budgetState = {
+      ...budget,
+      exhausted: hasCap,
+      accountingError: `${args.source} usage unavailable`,
+    };
+  }
+
+  if (latest.budgetState.exhausted && latest.status !== "stopped_by_user") {
+    latest.status = "budget_exhausted";
+  }
+  latest.updatedAt = new Date().toISOString();
+  await writeMeta(args.dir, latest);
+  const persisted = await readMeta(args.dir);
+  await writeProgress(args.dir, persisted, args.pieces);
+  await writeWorkbench(args.dir, persisted, args.pieces);
+  return persisted;
+}
 
 export async function propose(goal: string) {
   const goalType = inferGoalType(goal);
@@ -274,60 +352,78 @@ async function captureBarEvidence(
   dir: string,
   pieceId: string,
   round: number,
+  screenshotFn: ScreenshotFn,
 ): Promise<{ path: string; kind: "image" | "text" }> {
   const base = path.join(dir, "evidence", pieceId, `round-${round}`);
   await mkdir(base, { recursive: true });
   const barOut = path.join(base, "bar.png");
   if (!meta.bar.url) throw new Error("Bar has no URL for evidence capture.");
 
-  if (meta.goalType === "writing" || meta.goalType === "research") {
+  if (
+    meta.goalType === "writing" ||
+    meta.goalType === "research" ||
+    meta.goalType === "code"
+  ) {
     const t = await fetchTextEvidence(meta.bar.url, path.join(base, "bar.txt"));
     return { path: t.path, kind: "text" };
   }
 
-  try {
-    const shot = await screenshotUrl(meta.bar.url, barOut);
-    return {
-      path: shot.path,
-      kind: shot.path.endsWith(".html") ? "text" : "image",
-    };
-  } catch {
-    const t = await fetchTextEvidence(meta.bar.url, path.join(base, "bar.txt"));
-    return { path: t.path, kind: "text" };
+  const shot = await screenshotFn(meta.bar.url, barOut, {
+    width: 1440,
+    height: 900,
+  });
+  if (!isVisualEvidencePath(shot.path)) {
+    throw new Error("Bar visual evidence is not an image.");
   }
+  return { path: shot.path, kind: "image" };
 }
 
 async function captureOursEvidence(
   artifactPath: string,
+  meta: RunMeta,
   dir: string,
   pieceId: string,
   round: number,
   kind: "image" | "text",
+  screenshotFn: ScreenshotFn,
 ): Promise<string> {
   const base = path.join(dir, "evidence", pieceId, `round-${round}`);
   await mkdir(base, { recursive: true });
   if (kind === "text") {
     const dest = path.join(base, "ours.txt");
-    // If artifact is HTML, strip tags lightly
-    const { readFile } = await import("node:fs/promises");
-    let text = await readFile(artifactPath, "utf8");
-    text = text
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const text = normalizeTextEvidence(await readFile(artifactPath, "utf8"));
+    if (!text) {
+      throw new Error("Candidate text evidence is empty after normalization.");
+    }
     await writeFile(dest, text, "utf8");
     return dest;
   }
-  const dest = path.join(base, "ours.png");
-  // Prefer copying HTML artifact as fallback evidence when screenshots unavailable
-  if (artifactPath.endsWith(".html")) {
-    const htmlDest = path.join(base, "ours.html");
-    await copyEvidence(artifactPath, htmlDest);
-    await writeFile(dest + ".fallback.txt", `See ${htmlDest}\n`, "utf8");
-    return htmlDest;
+
+  if (isVisualEvidencePath(artifactPath)) {
+    const ext = path.extname(artifactPath).toLowerCase();
+    const dest = path.join(base, `ours${ext}`);
+    await copyEvidence(artifactPath, dest);
+    return dest;
   }
-  await copyEvidence(artifactPath, dest);
-  return dest;
+
+  const renderUrl =
+    meta.previewUrl ??
+    (artifactPath.toLowerCase().endsWith(".html")
+      ? pathToFileURL(artifactPath).href
+      : undefined);
+  if (!renderUrl) {
+    throw new Error(
+      `No renderable visual evidence for ${artifactPath}; provide previewUrl or an image artifact.`,
+    );
+  }
+  const shot = await screenshotFn(renderUrl, path.join(base, "ours.png"), {
+    width: 1440,
+    height: 900,
+  });
+  if (!isVisualEvidencePath(shot.path)) {
+    throw new Error("Candidate visual evidence is not an image.");
+  }
+  return shot.path;
 }
 
 export async function runLoop(
@@ -337,35 +433,52 @@ export async function runLoop(
 ): Promise<RunMeta> {
   const dir = runDir(runId, cwd);
   let meta = await readMeta(dir);
+  let pieces = await readPieces(dir);
   if (meta.status === "failed_bar") {
     throw new Error(
       `Bar validation failed: ${(meta.barValidation?.reasons ?? []).join("; ")}`,
     );
+  }
+  if (meta.budgetState?.exhausted) {
+    meta.status = "budget_exhausted";
+    meta.updatedAt = new Date().toISOString();
+    await writeMeta(dir, meta);
+    meta = await readMeta(dir);
+    await writeProgress(dir, meta, pieces);
+    await writeWorkbench(dir, meta, pieces);
+    return meta;
   }
 
   meta.status = "running";
   meta.updatedAt = new Date().toISOString();
   await writeMeta(dir, meta);
 
-  let pieces = await readPieces(dir);
   const builder = hooks.builderFn ?? defaultBuilder;
+  const screenshot: ScreenshotFn =
+    hooks.screenshotFn ??
+    ((url, outPath, viewport) =>
+      screenshotUrl(url, outPath, viewport, { allowHtmlFallback: false }));
 
   for (const piece of pieces) {
     meta = await readMeta(dir);
-    if (!shouldContinue(meta)) break;
     if (meta.budgetState?.exhausted) {
       meta.status = "budget_exhausted";
+      meta.updatedAt = new Date().toISOString();
+      await writeMeta(dir, meta);
       break;
     }
+    if (!shouldContinue(meta)) break;
     if (piece.status === "won") continue;
 
     while (true) {
       meta = await readMeta(dir);
-      if (!shouldContinue(meta)) break;
       if (meta.budgetState?.exhausted) {
         meta.status = "budget_exhausted";
+        meta.updatedAt = new Date().toISOString();
+        await writeMeta(dir, meta);
         break;
       }
+      if (!shouldContinue(meta)) break;
 
       if (
         hooks.maxRoundsPerPiece != null &&
@@ -433,7 +546,21 @@ export async function runLoop(
           round: piece.round,
           dryRun: hooks.spawnDryRun,
           timeoutMs: hooks.spawnTimeoutMs,
+          maxUsd: remainingUsageLimits(meta).maxUsd,
         });
+        if (!spawned.skipped) {
+          meta = await accountModelUsage({
+            dir,
+            pieces,
+            source: `${kind} builder`,
+            usage: spawned.usage,
+          });
+          if (!shouldContinue(meta)) {
+            piece.status = "pending";
+            await writePieces(dir, pieces);
+            break;
+          }
+        }
         const found = await findArtifactAfterSpawn(dir, piece.id);
         if (found) {
           built = { artifactPath: found, openAs: `file://${found}` };
@@ -469,13 +596,21 @@ export async function runLoop(
       await writePieces(dir, pieces);
       await writeProgress(dir, meta, pieces);
 
-      const barEv = await captureBarEvidence(meta, dir, piece.id, piece.round);
+      const barEv = await captureBarEvidence(
+        meta,
+        dir,
+        piece.id,
+        piece.round,
+        screenshot,
+      );
       const oursPath = await captureOursEvidence(
         built.artifactPath,
+        meta,
         dir,
         piece.id,
         piece.round,
         barEv.kind,
+        screenshot,
       );
 
       const blindDir = path.join(
@@ -486,16 +621,28 @@ export async function runLoop(
         "blind",
       );
       await mkdir(blindDir, { recursive: true });
-      const ext =
-        barEv.kind === "text"
-          ? path.extname(oursPath) || ".txt"
-          : path.extname(oursPath) || ".png";
-      const unlabeledOurs = path.join(blindDir, `candidate-1${ext}`);
-      const unlabeledBar = path.join(blindDir, `candidate-2${ext}`);
+      const oursExt =
+        path.extname(oursPath) || (barEv.kind === "text" ? ".txt" : ".png");
+      const barExt =
+        path.extname(barEv.path) || (barEv.kind === "text" ? ".txt" : ".png");
+      const unlabeledOurs = path.join(
+        blindDir,
+        `candidate-${randomUUID()}${oursExt}`,
+      );
+      const unlabeledBar = path.join(
+        blindDir,
+        `candidate-${randomUUID()}${barExt}`,
+      );
       await copyEvidence(oursPath, unlabeledOurs);
       await copyEvidence(barEv.path, unlabeledBar);
       const pair = randomizePair(unlabeledOurs, unlabeledBar, barEv.kind);
-      const prompt = buildBlindCriticPrompt(pair, piece.name);
+      const prompt =
+        pair.kind === "text"
+          ? buildBlindCriticPrompt(pair, piece.name, {
+              leftText: await readFile(pair.leftPath, "utf8"),
+              rightText: await readFile(pair.rightPath, "utf8"),
+            })
+          : buildBlindCriticPrompt(pair, piece.name);
       const criticPromptPath = path.join(
         dir,
         "evidence",
@@ -513,6 +660,7 @@ export async function runLoop(
       });
 
       let verdict: Verdict;
+      let haltAfterVerdict = false;
       if (hooks.verdictFn) {
         verdict = await hooks.verdictFn({
           piece,
@@ -520,21 +668,32 @@ export async function runLoop(
           oursPath,
           barPath: barEv.path,
         });
-      } else if (
-        hooks.visionCritic &&
-        pair.kind === "image" &&
-        (pair.leftPath.endsWith(".png") ||
-          pair.leftPath.endsWith(".jpg") ||
-          pair.leftPath.endsWith(".jpeg") ||
-          pair.leftPath.endsWith(".webp")) &&
-        process.env.OPENROUTER_API_KEY
-      ) {
+      } else if (hooks.visionCritic && pair.kind === "image") {
+        if (
+          !isVisualEvidencePath(pair.leftPath) ||
+          !isVisualEvidencePath(pair.rightPath)
+        ) {
+          throw new Error("Vision critic requires two image evidence files.");
+        }
+        if (!process.env.OPENROUTER_API_KEY) {
+          throw new Error(
+            "Vision critic requested but OPENROUTER_API_KEY is unset.",
+          );
+        }
         try {
           const v = await visionBlindCritic({
             leftPath: pair.leftPath,
             rightPath: pair.rightPath,
             pieceName: piece.name,
+            maxTokens: remainingUsageLimits(meta).maxTokens,
           });
+          meta = await accountModelUsage({
+            dir,
+            pieces,
+            source: "vision critic",
+            usage: v.usage,
+          });
+          haltAfterVerdict = !shouldContinue(meta);
           verdict = {
             winner: mapBlindWinner(v.winner, pair.leftIsOurs),
             gap: v.gap,
@@ -542,11 +701,25 @@ export async function runLoop(
             note: "vision-critic",
           };
         } catch (err) {
-          verdict = await heuristicCritic(pair, meta.measurable);
-          verdict.note = `vision-critic-failed: ${err instanceof Error ? err.message : String(err)}; fell back to heuristic`;
+          meta = await accountModelUsage({
+            dir,
+            pieces,
+            source: "vision critic",
+          });
+          throw new Error(
+            `Vision critic failed closed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       } else if (hooks.criticFn) {
-        const raw = await hooks.criticFn(prompt);
+        const result = await hooks.criticFn(prompt, remainingUsageLimits(meta));
+        const raw = typeof result === "string" ? result : result.raw;
+        meta = await accountModelUsage({
+          dir,
+          pieces,
+          source: "text critic",
+          usage: typeof result === "string" ? undefined : result.usage,
+        });
+        haltAfterVerdict = !shouldContinue(meta);
         const parsed = parseCriticJson(raw);
         verdict = {
           winner: mapBlindWinner(parsed.winner, pair.leftIsOurs),
@@ -555,11 +728,6 @@ export async function runLoop(
         };
       } else {
         verdict = await heuristicCritic(pair, meta.measurable);
-        if (hooks.visionCritic && !process.env.OPENROUTER_API_KEY) {
-          verdict.note =
-            (verdict.note ?? "") +
-            " | vision requested but OPENROUTER_API_KEY unset — heuristic used";
-        }
       }
 
       await writeVerdict(dir, piece.id, piece.round, verdict);
@@ -573,6 +741,15 @@ export async function runLoop(
         round: piece.round,
         note: `verdict=${verdict.winner}`,
       });
+
+      if (haltAfterVerdict) {
+        piece.status =
+          meta.status === "stopped_by_user" ? "stopped" : "pending";
+        await writePieces(dir, pieces);
+        await writeProgress(dir, meta, pieces);
+        await writeWorkbench(dir, meta, pieces);
+        break;
+      }
 
       if (verdict.winner === "ours") {
         piece.status = "won";

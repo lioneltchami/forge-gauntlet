@@ -8,6 +8,12 @@ export type ScreenshotResult = {
   viewport: { width: number; height: number };
 };
 
+export type ScreenshotFn = (
+  url: string,
+  outPath: string,
+  viewport: { width: number; height: number },
+) => Promise<ScreenshotResult>;
+
 async function tryPlaywright() {
   try {
     return await import("playwright");
@@ -16,14 +22,16 @@ async function tryPlaywright() {
   }
 }
 
-/** Screenshot a URL. Falls back to fetching HTML bytes if Playwright browsers missing. */
+/** Screenshot a URL. Strict mode refuses non-visual fallback evidence. */
 export async function screenshotUrl(
   url: string,
   outPath: string,
   viewport: { width: number; height: number } = { width: 1440, height: 900 },
+  options: { allowHtmlFallback?: boolean } = {},
 ): Promise<ScreenshotResult> {
   await mkdir(path.dirname(outPath), { recursive: true });
   const pw = await tryPlaywright();
+  let screenshotError: unknown;
   if (pw) {
     try {
       const browser = await pw.chromium.launch({ headless: true });
@@ -41,9 +49,19 @@ export async function screenshotUrl(
         hash: createHash("sha256").update(buf).digest("hex"),
         viewport,
       };
-    } catch {
-      // fall through to HTML fetch placeholder
+    } catch (error) {
+      screenshotError = error;
     }
+  }
+
+  if (options.allowHtmlFallback === false) {
+    const reason =
+      screenshotError instanceof Error
+        ? screenshotError.message
+        : pw
+          ? "unknown browser failure"
+          : "Playwright is unavailable";
+    throw new Error(`Visual evidence capture failed: ${reason}`);
   }
 
   // Fallback: store fetched HTML as .html so the run still has evidence
@@ -68,6 +86,24 @@ export async function screenshotUrl(
   };
 }
 
+export function normalizeTextEvidence(text: string): string {
+  const looksLikeHtml =
+    /<!doctype|<html|<head|<body|<script|<style|<h[1-6]|<p|<div|<span|<article/i.test(
+      text,
+    );
+  const normalized = looksLikeHtml
+    ? text
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+    : text;
+  return normalized
+    .replace(/\b(by|author|written by)\s+[A-Z][\w.\- ]{1,40}/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 12000);
+}
+
 export async function fetchTextEvidence(
   url: string,
   outPath: string,
@@ -78,16 +114,8 @@ export async function fetchTextEvidence(
     signal: AbortSignal.timeout(20000),
   });
   if (!res.ok) throw new Error(`Text fetch failed: HTTP ${res.status}`);
-  let text = await res.text();
-  // Strip obvious bylines / titles for a weaker blind read
-  text = text
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\b(by|author|written by)\s+[A-Z][\w.\- ]{1,40}/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 12000);
+  const text = normalizeTextEvidence(await res.text());
+  if (!text) throw new Error("Text evidence is empty after normalization.");
   await writeFile(outPath, text, "utf8");
   return {
     path: outPath,

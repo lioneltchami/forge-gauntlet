@@ -11,6 +11,7 @@ export {
   writeCompareReport,
 } from "./apex/compare.js";
 export { inferGoalType, isVagueName, proposeBars, validateBar } from "./bar.js";
+export type { Budget, UsageDelta } from "./checkpoint.js";
 export {
   budgetBlocks,
   emptyBudget,

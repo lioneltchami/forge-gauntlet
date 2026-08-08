@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { compareFramesGrid, syntheticPng } from "../runtime/apex/compare.js";
-import { detectAgents, spawnImplementer } from "./spawn.js";
+import { detectAgents, parseAgentUsage, spawnImplementer } from "./spawn.js";
 
 describe("spawn adapters", () => {
 	it("detects claude and/or codex on this machine", async () => {
@@ -40,6 +40,36 @@ describe("spawn adapters", () => {
 		} finally {
 			await rm(cwd, { recursive: true, force: true });
 		}
+	});
+
+	it("parses Claude and Codex cumulative usage", () => {
+		assert.deepEqual(
+			parseAgentUsage(
+				"claude",
+				JSON.stringify({
+					usage: { input_tokens: 40, output_tokens: 10 },
+					total_cost_usd: 0.012,
+				}),
+			),
+			{ tokens: 50, usd: 0.012 },
+		);
+		assert.deepEqual(
+			parseAgentUsage(
+				"codex",
+				[
+					JSON.stringify({ type: "turn.started" }),
+					JSON.stringify({
+						type: "turn.completed",
+						usage: {
+							input_tokens: 30,
+							cached_input_tokens: 5,
+							output_tokens: 15,
+						},
+					}),
+				].join("\n"),
+			),
+			{ tokens: 50, usd: undefined },
+		);
 	});
 });
 

@@ -17,11 +17,33 @@ export type BlindPair = {
 export function buildBlindCriticPrompt(
   pair: BlindPair,
   pieceName: string,
+  textEvidence?: { leftText: string; rightText: string },
 ): string {
   const medium =
     pair.kind === "image"
       ? "two unlabeled screenshots (A and B)"
       : "two unlabeled text excerpts (A and B)";
+
+  if (pair.kind === "text" && !textEvidence) {
+    throw new Error("Grounded text evidence required for blind critic.");
+  }
+  if (
+    pair.kind === "text" &&
+    (!textEvidence?.leftText.trim() || !textEvidence.rightText.trim())
+  ) {
+    throw new Error("Non-empty text evidence required for blind critic.");
+  }
+
+  const evidence =
+    pair.kind === "text"
+      ? [
+          "A:",
+          textEvidence?.leftText ?? "",
+          "",
+          "B:",
+          textEvidence?.rightText ?? "",
+        ]
+      : [`A is at: ${pair.leftPath}`, `B is at: ${pair.rightPath}`];
 
   return [
     `You are a harsh visual/product critic judging ${medium} for the piece "${pieceName}".`,
@@ -32,8 +54,7 @@ export function buildBlindCriticPrompt(
     "Respond with JSON only:",
     '{"winner":"A"|"B","gap":"one sentence","confidence":0.0-1.0}',
     "",
-    `A is at: ${pair.leftPath}`,
-    `B is at: ${pair.rightPath}`,
+    ...evidence,
   ].join("\n");
 }
 

@@ -86,6 +86,7 @@ export const BudgetStateSchema = z.object({
   usedUsd: z.number(),
   usedTokens: z.number(),
   exhausted: z.boolean(),
+  accountingError: z.string().optional(),
 });
 export type BudgetState = z.infer<typeof BudgetStateSchema>;
 

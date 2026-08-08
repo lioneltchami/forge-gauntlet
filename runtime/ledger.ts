@@ -1,6 +1,29 @@
-import { mkdir, readFile, writeFile, access } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Piece, RunMeta, Verdict } from "./types.js";
+
+const STOP_REQUEST_FILE = "stop-requested.json";
+
+async function hasStopRequest(dir: string): Promise<boolean> {
+  try {
+    await access(path.join(dir, STOP_REQUEST_FILE));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function requestStop(dir: string): Promise<void> {
+  await writeFile(
+    path.join(dir, STOP_REQUEST_FILE),
+    JSON.stringify({ requestedAt: new Date().toISOString() }, null, 2) + "\n",
+    "utf8",
+  );
+}
+
+export async function clearStopRequest(dir: string): Promise<void> {
+  await rm(path.join(dir, STOP_REQUEST_FILE), { force: true });
+}
 
 export function runsRoot(cwd = process.cwd()): string {
   return path.join(cwd, "runs");
@@ -22,27 +45,49 @@ export async function writeGoal(dir: string, goal: string) {
 }
 
 export async function writeMeta(dir: string, meta: RunMeta) {
+  const next = (await hasStopRequest(dir))
+    ? { ...meta, status: "stopped_by_user" as const }
+    : meta;
   await writeFile(
     path.join(dir, "meta.json"),
-    JSON.stringify(meta, null, 2) + "\n",
+    JSON.stringify(next, null, 2) + "\n",
     "utf8",
   );
 }
 
 export async function readMeta(dir: string): Promise<RunMeta> {
-  return JSON.parse(await readFile(path.join(dir, "meta.json"), "utf8"));
+  const meta = JSON.parse(
+    await readFile(path.join(dir, "meta.json"), "utf8"),
+  ) as RunMeta;
+  if (await hasStopRequest(dir)) {
+    meta.status = "stopped_by_user";
+  }
+  return meta;
 }
 
 export async function writePieces(dir: string, pieces: Piece[]) {
+  const next = (await hasStopRequest(dir))
+    ? pieces.map((piece) =>
+        piece.status === "won"
+          ? piece
+          : { ...piece, status: "stopped" as const },
+      )
+    : pieces;
   await writeFile(
     path.join(dir, "pieces.json"),
-    JSON.stringify(pieces, null, 2) + "\n",
+    JSON.stringify(next, null, 2) + "\n",
     "utf8",
   );
 }
 
 export async function readPieces(dir: string): Promise<Piece[]> {
-  return JSON.parse(await readFile(path.join(dir, "pieces.json"), "utf8"));
+  const pieces = JSON.parse(
+    await readFile(path.join(dir, "pieces.json"), "utf8"),
+  ) as Piece[];
+  if (!(await hasStopRequest(dir))) return pieces;
+  return pieces.map((piece) =>
+    piece.status === "won" ? piece : { ...piece, status: "stopped" as const },
+  );
 }
 
 export async function writeBarJson(dir: string, data: unknown) {

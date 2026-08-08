@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import type { UsageDelta } from "../runtime/checkpoint.js";
 import { HOSTILE_CRITIC_INSTRUCTION } from "../runtime/contracts.js";
 import { parseCriticJson } from "../runtime/critic.js";
 
@@ -24,11 +25,13 @@ export async function visionBlindCritic(args: {
   pieceName: string;
   apiKey?: string;
   model?: string;
+  maxTokens?: number;
 }): Promise<{
   winner: "A" | "B";
   gap: string;
   confidence: number;
   raw: string;
+  usage?: UsageDelta;
 }> {
   const apiKey = args.apiKey ?? process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY required for vision critic");
@@ -50,6 +53,9 @@ export async function visionBlindCritic(args: {
     body: JSON.stringify({
       model,
       temperature: 0.2,
+      ...(args.maxTokens != null
+        ? { max_tokens: Math.max(1, Math.floor(args.maxTokens)) }
+        : {}),
       messages: [
         {
           role: "system",
@@ -75,11 +81,27 @@ export async function visionBlindCritic(args: {
   }
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
-    usage?: { total_tokens?: number };
+    usage?: { total_tokens?: number; cost?: number };
   };
   const raw = data.choices?.[0]?.message?.content ?? "";
   const parsed = parseCriticJson(raw);
-  return { ...parsed, raw };
+  const tokens = data.usage?.total_tokens;
+  const usd = data.usage?.cost;
+  return {
+    ...parsed,
+    raw,
+    usage:
+      typeof tokens === "number" || typeof usd === "number"
+        ? {
+            tokens:
+              typeof tokens === "number" && Number.isFinite(tokens)
+                ? tokens
+                : undefined,
+            usd:
+              typeof usd === "number" && Number.isFinite(usd) ? usd : undefined,
+          }
+        : undefined,
+  };
 }
 
 /** Text-only OpenRouter critic (non-vision). */

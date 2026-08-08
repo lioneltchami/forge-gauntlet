@@ -2,6 +2,7 @@ import {
   findActiveRunId,
   readMeta,
   readPieces,
+  requestStop,
   runDir,
   writeMeta,
   writePieces,
@@ -20,6 +21,7 @@ export async function stopRun(
   if (meta.status === "completed" || meta.status === "stopped_by_user") {
     return meta;
   }
+  await requestStop(dir);
   meta.status = "stopped_by_user";
   meta.updatedAt = new Date().toISOString();
   const pieces = await readPieces(dir);
