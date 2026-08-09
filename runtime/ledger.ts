@@ -152,7 +152,7 @@ export function renderProgress(meta: RunMeta, pieces: Piece[]): string {
   lines.push("_You are the brake. Run `gauntlet stop` anytime._");
   lines.push("");
   lines.push(
-    "Technique by Matt Shumer (Claude of Duty). Gauntlet Runtime enforces the bar.",
+    "Technique by Matt Shumer (Claude of Duty). Forge Gauntlet enforces the bar.",
   );
   return lines.join("\n");
 }

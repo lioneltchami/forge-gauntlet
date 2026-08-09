@@ -21,6 +21,7 @@ import {
   renderProgress,
   runDir,
 } from "../runtime/ledger.js";
+import { writeMetaPrompt } from "../runtime/meta-prompt.js";
 import { createRun, propose, runLoop } from "../runtime/runner.js";
 import { stopRun } from "../runtime/stop.js";
 import type { BarCandidate } from "../runtime/types.js";
@@ -30,10 +31,9 @@ const program = new Command();
 program
   .name("gauntlet")
   .description(
-    "Gauntlet Runtime — quality loops that beat a real bar. Not a multi-model chat.",
+    "Forge Gauntlet — quality loops that beat a real bar. Technique by Matt Shumer.",
   )
   .version("0.2.0");
-
 function resolveBar(
   goal: string,
   barOpt: string,
@@ -83,6 +83,19 @@ program
       `\nNext: gauntlet run --bar <id|url> --goal "${goal}"\n     or: gauntlet compose --bar a --goal "..."`,
     );
     console.log(`Agent verbs: ${portableVerbs(detectAgentEnv())}`);
+  });
+
+program
+  .command("meta")
+  .description(
+    "Emit Shumer meta-prompt (paste into a strong model to draft a short aim prompt)",
+  )
+  .requiredOption("--goal <goal>", "Goal destination (not architecture)")
+  .option("--refs <refs>", "Optional reference bars / comps")
+  .action((opts) => {
+    console.log(
+      writeMetaPrompt(opts.goal as string, opts.refs as string | undefined),
+    );
   });
 
 program

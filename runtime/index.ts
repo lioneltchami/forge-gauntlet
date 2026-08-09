@@ -41,6 +41,7 @@ export {
   SECOND_ORDER_CHECKS,
 } from "./critic.js";
 export { decompose } from "./decompose.js";
+export { writeMetaPrompt } from "./meta-prompt.js";
 export { extractPlan, loadPlan } from "./plan.js";
 export { createRun, propose, runLoop } from "./runner.js";
 export { shouldContinue, stopRun } from "./stop.js";

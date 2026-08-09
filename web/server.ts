@@ -1,6 +1,6 @@
 /**
  * Local product shell over the same Gauntlet runtime.
- * UX pace inspired by trygauntlet.com — product is a quality loop, not multi-model chat.
+ * Local run UI for Forge Gauntlet quality loops.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";

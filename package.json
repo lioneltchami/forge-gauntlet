@@ -1,42 +1,42 @@
 {
-  "name": "gauntlet",
-  "version": "0.2.0",
-  "description": "Gauntlet Runtime — quality loops that beat a real bar. Technique by Matt Shumer.",
-  "type": "module",
-  "bin": {
-    "gauntlet": "./dist/cli/gauntlet.js"
-  },
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsx cli/gauntlet.ts",
-    "gauntlet": "tsx cli/gauntlet.ts",
-    "test": "tsx --test runtime/**/*.test.ts adapters/**/*.test.ts web/**/*.test.ts cli/**/*.test.ts",
-    "canary": "tsx scripts/canary.ts",
-    "ci": "npm run build && npm test && npm run canary && npm audit --audit-level=high",
-    "web": "tsx web/server.ts",
-    "demo": "tsx cli/gauntlet.ts demo"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "commander": "^13.1.0",
-    "playwright": "^1.51.0",
-    "pngjs": "^7.0.0",
-    "zod": "^3.24.2"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.10",
-    "@types/pngjs": "^6.0.5",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
-  },
-  "license": "MIT",
-  "keywords": [
-    "gauntlet",
-    "agent",
-    "critic",
-    "quality-loop",
-    "matt-shumer"
-  ]
+	"name": "forge-gauntlet",
+	"version": "0.2.0",
+	"description": "Forge Gauntlet — quality loops that beat a real bar. Technique by Matt Shumer.",
+	"type": "module",
+	"bin": {
+		"gauntlet": "./dist/cli/gauntlet.js"
+	},
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsx cli/gauntlet.ts",
+		"gauntlet": "tsx cli/gauntlet.ts",
+		"test": "tsx --test runtime/**/*.test.ts adapters/**/*.test.ts web/**/*.test.ts cli/**/*.test.ts",
+		"canary": "tsx scripts/canary.ts",
+		"ci": "npm run build && npm test && npm run canary && npm audit --audit-level=high",
+		"web": "tsx web/server.ts",
+		"demo": "tsx cli/gauntlet.ts demo"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"dependencies": {
+		"commander": "^13.1.0",
+		"playwright": "^1.51.0",
+		"pngjs": "^7.0.0",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.13.10",
+		"@types/pngjs": "^6.0.5",
+		"tsx": "^4.19.3",
+		"typescript": "^5.8.2"
+	},
+	"license": "MIT",
+	"keywords": [
+		"gauntlet",
+		"agent",
+		"critic",
+		"quality-loop",
+		"matt-shumer"
+	]
 }

@@ -1,19 +1,18 @@
 ---
 name: gauntlet
 description: >-
-  Gauntlet quality loop — propose named bars, validate them, emit an aim or
-  orchestrator prompt, and run builder/critic pairs with blind A/B evidence
+  Forge Gauntlet quality loop — propose named bars, validate them, emit a meta
+  or orchestrator prompt, and run builder/critic pairs with blind A/B evidence
   until the work beats the bar or the human stops. Triggers on /gauntlet,
-  gauntlet loop, compose gauntlet, beat this bar, aim prompt, apex mode.
-  Technique by Matt Shumer. Not a multi-model chat aggregator.
+  forge gauntlet, gauntlet loop, compose gauntlet, beat this bar, aim prompt,
+  apex mode. Technique by Matt Shumer.
 ---
 
-# Gauntlet
+# Forge Gauntlet
 
-You run Matt Shumer’s gauntlet loop with an honest harness. You are **not** [trygauntlet.com](https://www.trygauntlet.com/) (multi-model chat). You enforce a real quality bar with evidence.
+You run Matt Shumer’s gauntlet loop with an honest harness. Named bar. Blind critic. Binary win. Live ledger. You are the brake.
 
-Credit: technique by [Matt Shumer](https://github.com/mshumer) ([Claude of Duty](https://github.com/mshumer/Claude-of-Duty)). Role-split / gates / delegation patterns adapted from [NicholasSpisak/gauntlet-loop](https://github.com/NicholasSpisak/gauntlet-loop). Long-run capture lessons from [jolbol1/apex-gp](https://github.com/jolbol1/apex-gp).
-
+Credit: technique by [Matt Shumer](https://github.com/mshumer) ([guide](https://somethingbig.ai/gauntlet-loop) · [Claude of Duty](https://github.com/mshumer/Claude-of-Duty)). Role-split / gates from [NicholasSpisak/gauntlet-loop](https://github.com/NicholasSpisak/gauntlet-loop). Apex lessons from [jolbol1/apex-gp](https://github.com/jolbol1/apex-gp).
 Read [docs/TECHNIQUE.md](../../docs/TECHNIQUE.md) and [docs/HANDOFF.md](../../docs/HANDOFF.md) if present.
 
 ## Flow
@@ -22,11 +21,13 @@ Read [docs/TECHNIQUE.md](../../docs/TECHNIQUE.md) and [docs/HANDOFF.md](../../do
 2. **Propose bars.** If user did not supply a reference, offer **2 or 3** candidate bars (one line each) and **stop**. Wait for pick. Do not write the prompt yet.
 3. **Validate the bar.** Named, fetchable, comparable. Fail → say why, re-offer.
 4. **Choose path:**
-   - **Compose** — emit paste-ready orchestrator system prompt (`gauntlet compose` / [references](references/)). User pastes into Claude Code / Codex / Cursor. You do not fake evidence.
-   - **Aim** — short ~120–180 word Shumer aim prompt via [templates/aim-prompt.md](templates/aim-prompt.md).
+   - **Meta** — Shumer meta-prompt (`gauntlet meta --goal "…"`) so a strong model drafts a short aim prompt (goal + bar, no architecture).
+   - **Compose** — paste-ready orchestrator system prompt (`gauntlet compose` / [references](references/)).
+   - **Aim** — short ~120–180 word Shumer aim via [templates/aim-prompt.md](templates/aim-prompt.md).
    - **Run** — local runtime ledger + evidence (`gauntlet run`).
-5. **Offer to run.** Flat line: `I can run this here with the Gauntlet runtime.` Not a question.
+5. **Offer to run.** Flat line: `I can run this here with Forge Gauntlet.` Not a question.
 6. **If they say run:** use CLI/runtime. Do not soft-score. Do not invent bar screenshots.
+7. **Watch without interrupting.** Point them at `progress.md` / `workbench.md`. They stop when ready.
 
 ## Bar tests (fail closed)
 

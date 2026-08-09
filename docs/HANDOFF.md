@@ -1,6 +1,6 @@
 # HANDOFF — Gauntlet Runtime
 
-**Updated:** 2026-08-08 (Spisak adoptions: plan extract, smoothing, adversarial, workbench)  
+**Updated:** 2026-08-08 (forge-gauntlet rename + Shumer guide apply)
 **Repo:** `/Users/lionel/builders/gauntlet` · **Version:** 0.2.0
 
 ## Ready to test
@@ -48,7 +48,7 @@ npm run web       # http://localhost:8787
 
 ## Mission (unchanged)
 
-Quality-loop runtime (not trygauntlet multi-chat). Beat a real bar. Apex-scale needs your model plan.
+Open quality-loop runtime. Beat a real bar. Apex-scale needs your model plan.
 
 ## Attribution
 

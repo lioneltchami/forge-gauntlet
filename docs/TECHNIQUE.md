@@ -2,7 +2,9 @@
 
 **Technique by [Matt Shumer](https://github.com/mshumer)** — originally demonstrated in [Claude of Duty](https://github.com/mshumer/Claude-of-Duty) via a [152-word aim prompt](https://github.com/mshumer/Claude-of-Duty/blob/main/prompt.md).
 
-This project packages that technique as an honest runtime: named bars, separate critics, blind A/B with evidence, and a human brake. Credit the technique to Matt Shumer. This repo is scaffolding around it.
+Guide: [somethingbig.ai/gauntlet-loop](https://somethingbig.ai/gauntlet-loop).
+
+Forge Gauntlet packages that technique as an honest runtime: named bars, separate critics, blind A/B with evidence, live progress, optional meta-prompt, and a human brake. Credit the technique to Matt Shumer.
 
 ## The loop in five steps
 
@@ -25,25 +27,21 @@ This project packages that technique as an honest runtime: named bars, separate 
 
 ## What this project adds
 
-Prompt-only wrappers write a good aim prompt and stop. Gauntlet Runtime:
+Prompt-only wrappers write a good aim prompt and stop. Forge Gauntlet:
 
 - Validates the bar (fail closed if it cannot be fetched)
 - Writes a machine-readable ledger + live `progress.md` / `workbench.md`
 - Captures evidence (screenshots / text) for blind comparison
 - Isolates critic context by construction
-- Emits Spisak-shaped orchestrator prompts (`compose`) with human gates
+- Emits Shumer meta-prompt (`meta`) and Spisak-shaped orchestrator prompts (`compose`)
+- Enforces post-win smoothing; adversarial pass on risky pieces
 - Supports Cursor, Claude Code, Codex, and generic subagent verbs
 - Apex mode: `CONTRACT.md`, named shots, budget/resume for long climbs
 
-**Not** a multi-model chat product ([trygauntlet.com](https://www.trygauntlet.com/)). Compete on enforced standards.
-
 ## Attribution
 
-- Technique: Matt Shumer ([Claude of Duty](https://github.com/mshumer/Claude-of-Duty))
-- Prompt-skill packaging: [robonuggets/gauntlet-loop](https://github.com/robonuggets/gauntlet-loop), [duolahypercho/gauntlet-loop](https://github.com/duolahypercho/gauntlet-loop)
+- Technique: Matt Shumer ([guide](https://somethingbig.ai/gauntlet-loop) · [Claude of Duty](https://github.com/mshumer/Claude-of-Duty))
 - Role-split / gates / delegation contracts: [NicholasSpisak/gauntlet-loop](https://github.com/NicholasSpisak/gauntlet-loop)
 - Long-run capture / CONTRACT lessons: [jolbol1/apex-gp](https://github.com/jolbol1/apex-gp)
-
-Positioning: **Not another multi-model chat. A quality loop that won’t stop until it beats a real bar.**
 
 Continuity: see [`HANDOFF.md`](HANDOFF.md).

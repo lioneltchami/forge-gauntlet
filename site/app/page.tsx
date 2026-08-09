@@ -1,14 +1,55 @@
-const GITHUB = "https://github.com/lioneltchami/gauntlet";
+import Image from "next/image";
+
+const GITHUB = "https://github.com/lioneltchami/forge-gauntlet";
+
+const STONES = [
+  {
+    gem: "lime",
+    name: "Bar",
+    copy: "Name a real reference. Vague AAA fails closed.",
+  },
+  {
+    gem: "ember",
+    name: "Build",
+    copy: "Implementer writes artifacts. Orchestrator never codes.",
+  },
+  {
+    gem: "steel",
+    name: "Blind",
+    copy: "Fresh critic. Labels stripped. Binary pick.",
+  },
+  {
+    gem: "bone",
+    name: "Gap",
+    copy: "One sentence. Feed only that back. Loop.",
+  },
+  {
+    gem: "oxide",
+    name: "Smooth",
+    copy: "Integrated whole must cohere before done.",
+  },
+  {
+    gem: "gold",
+    name: "Win",
+    copy: "Ours beats the bar — or you pull the brake.",
+  },
+] as const;
 
 export default function HomePage() {
   return (
     <>
       <header className="site-nav">
-        <a href="#top" aria-label="Gauntlet home">
-          GAUNTLET
+        <a
+          className="brand-lockup"
+          href="#top"
+          aria-label="Forge Gauntlet home"
+        >
+          <Image src="/mark.png" alt="" width={28} height={28} />
+          Forge Gauntlet
         </a>
         <nav className="nav-links" aria-label="Primary">
-          <a href="#loop">Loop</a>
+          <a href="#stones">Six stones</a>
+          <a href="#method">Method</a>
           <a href="#install">Install</a>
           <a href={GITHUB} target="_blank" rel="noreferrer">
             GitHub
@@ -18,18 +59,25 @@ export default function HomePage() {
 
       <main id="top">
         <section className="hero" aria-label="Hero">
-          <div className="hero-plane" aria-hidden />
+          <div
+            className="hero-media"
+            role="img"
+            aria-label="Forged gauntlet in a dark workshop"
+          />
           <div className="hero-inner">
+            <p className="eyebrow">Open quality ordeal · agent harness</p>
             <h1 className="brand">
-              Gaunt<span>let</span>
+              Forge
+              <br />
+              <em>Gauntlet</em>
             </h1>
             <p className="hero-line">
-              Quality loops that won’t stop until they beat a real bar — not
-              another multi-model chat.
+              Six stones. One bar. Blind critic. Loop until yours wins — or you
+              stop.
             </p>
             <div className="cta-row">
               <a className="btn btn-primary" href="#install">
-                Install runtime
+                Don the runtime
               </a>
               <a
                 className="btn btn-ghost"
@@ -37,100 +85,79 @@ export default function HomePage() {
                 target="_blank"
                 rel="noreferrer"
               >
-                View on GitHub
+                Open the forge
               </a>
             </div>
             <p className="hero-meta">
-              Technique by Matt Shumer · Runtime by builders who refuse soft
-              scores
+              Technique by Matt Shumer · Runtime by Forge Gauntlet · Original
+              forge mark
             </p>
           </div>
         </section>
 
-        <section className="not-chat" id="not-chat">
-          <div className="section-inner split">
-            <div>
-              <p className="kicker">Positioning</p>
-              <h2>Not a chat room with five models</h2>
-              <p className="lede">
-                <a
-                  href="https://www.trygauntlet.com/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  trygauntlet.com
-                </a>{" "}
-                aggregates answers. Gauntlet Runtime enforces a standard: named
-                bar, fetched evidence, blind A/B, binary win.
-              </p>
-            </div>
-            <div className="compare" role="list">
-              <div className="bad" role="listitem">
-                <h3>Chat aggregator</h3>
-                <ul>
-                  <li>Pick a model, pad a reply</li>
-                  <li>“Looks good” vibes</li>
-                  <li>No fetched reference</li>
-                  <li>Builder grades itself</li>
-                </ul>
-              </div>
-              <div className="good" role="listitem">
-                <h3>Gauntlet Runtime</h3>
-                <ul>
-                  <li>Named, fetchable bar</li>
-                  <li>Blind critic, fresh each retry</li>
-                  <li>ours | bar — one gap</li>
-                  <li>Human + budget outrank the loop</li>
-                </ul>
-              </div>
+        <section className="myth" id="stones">
+          <div className="section-inner">
+            <p className="kicker">The six stones</p>
+            <h2>Your mythology. Your loop.</h2>
+            <p className="lede">
+              Six hard gates of the quality ordeal. Miss one and the run stays
+              open.
+            </p>
+            <div className="stones">
+              {STONES.map((s) => (
+                <article key={s.name} className="stone" data-gem={s.gem}>
+                  <strong>{s.name}</strong>
+                  <p>{s.copy}</p>
+                </article>
+              ))}
             </div>
           </div>
         </section>
 
-        <section id="loop">
+        <section id="method">
           <div className="section-inner split">
             <div>
-              <p className="kicker">The loop</p>
-              <h2>Aim. Build. Blind audit. Iterate.</h2>
+              <p className="kicker">The method</p>
+              <h2>Destination, not architecture</h2>
               <p className="lede">
-                Fan out pieces. Separate implementer from critic. Keep going
-                until yours wins side-by-side — or you pull the brake.
+                Give the agent a goal and a real bar it can fetch. Let it split
+                the work. Never let the builder grade itself. Keep looping — you
+                are the brake.
               </p>
             </div>
             <ol className="loop">
               <li>
                 <div>
-                  <strong>Name the bar</strong>
+                  <strong>Goal, not how</strong>
                   <p>
-                    Stripe pricing. Nike Running. A Julia Evans post. Vague
-                    “AAA” fails closed.
+                    Destination only. Lead agent owns the route and the pieces.
                   </p>
                 </div>
               </li>
               <li>
                 <div>
-                  <strong>Build the piece</strong>
+                  <strong>Real bar</strong>
                   <p>
-                    Claude / Codex / Cursor spawn into artifacts. Orchestrator
-                    never implements.
+                    Concrete reference to inspect — not “amazing” or
+                    “production-ready.”
                   </p>
                 </div>
               </li>
               <li>
                 <div>
-                  <strong>Blind critic</strong>
+                  <strong>Separate critic</strong>
                   <p>
-                    Labels stripped. Fresh context. Binary pick + one sentence
-                    gap. No 1–10 scores.
+                    Fresh context. Blind A/B when possible. One gap. No soft
+                    scores.
                   </p>
                 </div>
               </li>
               <li>
                 <div>
-                  <strong>Smooth + adversarial</strong>
+                  <strong>Watch, don’t poke</strong>
                   <p>
-                    Risky pieces get a second opinion. Integrated whole must
-                    pass smoothing before done.
+                    Live ledger and workbench. Stop when it’s good enough — or
+                    budget hits.
                   </p>
                 </div>
               </li>
@@ -143,8 +170,8 @@ export default function HomePage() {
             <p className="kicker">Get it</p>
             <h2>Run it where your agents live</h2>
             <p className="lede">
-              Open source CLI + skill. You bring Claude Max / Codex /
-              OpenRouter. We bring the harness.
+              Open CLI + skill. You bring Claude Max / Codex / OpenRouter. We
+              bring the harness.
             </p>
             <pre className="terminal" tabIndex={0}>
               <code>
@@ -152,9 +179,10 @@ export default function HomePage() {
                 {"\n"}
                 <span className="prompt">$</span> git clone {GITHUB}.git
                 {"\n"}
-                <span className="prompt">$</span> cd gauntlet && npm install
+                <span className="prompt">$</span> cd forge-gauntlet && npm
+                install
                 {"\n\n"}
-                <span className="cmt"># propose bars, then run a loop</span>
+                <span className="cmt"># propose bars, then run</span>
                 {"\n"}
                 <span className="prompt">$</span> npm run gauntlet -- propose
                 &quot;dark athletic landing&quot;
@@ -162,16 +190,16 @@ export default function HomePage() {
                 <span className="prompt">$</span> npm run gauntlet -- run --bar
                 a --goal &quot;…&quot; --spawn-agent
                 {"\n\n"}
-                <span className="cmt"># Cursor / Claude skill</span>
+                <span className="cmt"># Cursor skill</span>
                 {"\n"}
                 <span className="prompt">$</span> cp -R skills/gauntlet
                 ~/.cursor/skills/gauntlet
               </code>
             </pre>
-            <p className="credit" style={{ marginTop: "2rem" }}>
-              Technique by{" "}
+            <p className="credit">
+              Method documented by{" "}
               <a
-                href="https://github.com/mshumer"
+                href="https://somethingbig.ai/gauntlet-loop"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -185,23 +213,11 @@ export default function HomePage() {
               >
                 Claude of Duty
               </a>
-              ). Role-split patterns adapted from{" "}
-              <a
-                href="https://github.com/NicholasSpisak/gauntlet-loop"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Spisak
-              </a>
-              . Apex lessons from{" "}
-              <a
-                href="https://github.com/jolbol1/apex-gp"
-                target="_blank"
-                rel="noreferrer"
-              >
-                apex-gp
-              </a>
-              .
+              ). Forge Gauntlet is the open runtime that enforces it.
+            </p>
+            <p className="legal-note">
+              Visual mark is an original forge gauntlet. Not Marvel. No
+              affiliation.
             </p>
           </div>
         </section>
@@ -209,9 +225,9 @@ export default function HomePage() {
 
       <footer>
         <div className="footer-inner">
-          <span>GAUNTLET RUNTIME · MIT</span>
+          <span>Forge Gauntlet · MIT</span>
           <a href={GITHUB} target="_blank" rel="noreferrer">
-            github.com/lioneltchami/gauntlet
+            github.com/lioneltchami/forge-gauntlet
           </a>
         </div>
       </footer>
