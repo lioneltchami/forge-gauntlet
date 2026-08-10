@@ -14,12 +14,14 @@ atmospheric
 
 ## Theme
 
-Dark forge paper · acid-lime accent (≤5% of viewport) · ember for stop/danger only.
+Dark forge paper · acid-lime accent (≤5% of viewport) · ember for Win/stop only.
+Accent on CTAs, thin rules, stage numerals — never the full display brand word.
 
 - `--color-paper` oklch(8% 0.01 145)
 - `--color-paper-2` oklch(12% 0.012 145)
 - `--color-ink` oklch(95% 0.015 120)
 - `--color-ink-2` oklch(72% 0.02 125)
+- `--color-ink-faint` oklch(62% 0.02 145)
 - `--color-rule` oklch(22% 0.015 145)
 - `--color-accent` oklch(92% 0.21 120)
 - `--color-accent-ink` oklch(12% 0.02 145)

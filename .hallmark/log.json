@@ -8,6 +8,17 @@
     "nav": "N9 Edge-aligned",
     "footer": "Ft5 Statement",
     "scope": "app",
+    "brief": "Forge Gauntlet — audit punch-list redesign"
+  },
+  {
+    "date": "2026-08-09",
+    "macrostructure": "Narrative Workflow",
+    "theme": "custom-forge-atmospheric",
+    "theme_axes": "dark / display-condensed / chromatic-lime",
+    "enrichment": "none",
+    "nav": "N9 Edge-aligned",
+    "footer": "Ft5 Statement",
+    "scope": "app",
     "brief": "Forge Gauntlet marketing — audit redesign"
   }
 ]

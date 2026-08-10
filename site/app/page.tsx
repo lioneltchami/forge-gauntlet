@@ -4,39 +4,45 @@ const GITHUB = "https://github.com/lioneltchami/forge-gauntlet";
 
 const STAGES = [
   {
+    id: "stage-1",
     n: "1.0",
-    stage: "1",
     name: "Bar",
+    weight: "featured" as const,
     copy: "Name a real reference the critic can fetch. Vague AAA fails closed.",
   },
   {
+    id: "stage-2",
     n: "2.0",
-    stage: "2",
     name: "Build",
+    weight: "dense" as const,
     copy: "Implementer writes artifacts. Orchestrator never codes the piece.",
   },
   {
+    id: "stage-3",
     n: "3.0",
-    stage: "3",
     name: "Blind",
+    weight: "featured" as const,
     copy: "Fresh critic. Labels stripped. Binary pick — ours or the bar.",
   },
   {
+    id: "stage-4",
     n: "4.0",
-    stage: "4",
     name: "Gap",
+    weight: "dense" as const,
     copy: "One sentence only. Feed that back. Loop again.",
   },
   {
+    id: "stage-5",
     n: "5.0",
-    stage: "5",
     name: "Smooth",
+    weight: "dense" as const,
     copy: "Integrated whole must cohere before the run can close.",
   },
   {
+    id: "stage-6",
     n: "6.0",
-    stage: "6",
     name: "Win",
+    weight: "finale" as const,
     copy: "Ours beats the bar — or you pull the brake.",
   },
 ] as const;
@@ -73,8 +79,9 @@ export default function HomePage() {
             <h1 className="brand">
               Forge
               <br />
-              <span className="accent">Gauntlet</span>
+              Gauntlet
             </h1>
+            <div className="brand-rule" aria-hidden />
             <p className="hero-line">
               Six stages. One bar. Blind critic. Loop until yours wins — or you
               stop.
@@ -83,8 +90,8 @@ export default function HomePage() {
               <a className="btn btn-primary" href="#install">
                 Don the runtime
               </a>
-              <a className="btn btn-ghost" href="#workflow">
-                See the stages
+              <a className="btn btn-ghost" href="#stage-1">
+                Start at 1.0
               </a>
             </div>
             <p className="hero-meta">
@@ -103,17 +110,41 @@ export default function HomePage() {
               </p>
             </div>
             <ol className="stages">
-              {STAGES.map((s) => (
-                <li key={s.n} className="stage" data-stage={s.stage}>
-                  <div className="stage-num">{s.n}</div>
-                  <div className="stage-body">
-                    <h3>{s.name}</h3>
-                    <p>{s.copy}</p>
+              {STAGES.map((s, i) => (
+                <li
+                  key={s.id}
+                  id={s.id}
+                  className={`stage stage-${s.weight}`}
+                  data-stage={s.n}
+                >
+                  <div className="stage-label">
+                    <span className="stage-num">{s.n}</span>
+                    <h3 className="stage-name">{s.name}</h3>
                   </div>
-                  <div className="stage-mark" aria-hidden />
+                  <div className="stage-body">
+                    <p>{s.copy}</p>
+                    {i < STAGES.length - 1 ? (
+                      <a className="stage-jump" href={`#${STAGES[i + 1].id}`}>
+                        Next · {STAGES[i + 1].n} {STAGES[i + 1].name}
+                      </a>
+                    ) : (
+                      <a className="stage-jump" href="#install">
+                        Run it
+                      </a>
+                    )}
+                  </div>
+                  <div className="stage-visual" aria-hidden>
+                    <span className="stage-visual-num">{s.n}</span>
+                    <span className="stage-visual-bar" />
+                  </div>
                 </li>
               ))}
             </ol>
+            <div className="workflow-foot">
+              <a className="btn btn-primary" href="#stage-1">
+                Start at stage 1.0
+              </a>
+            </div>
           </div>
         </section>
 
