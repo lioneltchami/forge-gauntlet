@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Forge Gauntlet — quality loops that beat a real bar",
   description:
-    "Six stones. One bar. Blind critic. Binary win. Open quality-loop runtime. Technique by Matt Shumer.",
+    "Six stages. One bar. Blind critic. Binary win. Open quality-loop runtime. Technique by Matt Shumer.",
   metadataBase: new URL("https://gauntlet-runtime.vercel.app"),
   icons: {
     icon: [

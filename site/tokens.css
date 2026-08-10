@@ -1,0 +1,56 @@
+/* Hallmark · genre: atmospheric · macrostructure: Narrative Workflow
+ * design-system: design.md · designed-as-app
+ * nav: N9 Edge-aligned · footer: Ft5 Statement
+ * theme axes: dark / display-condensed / chromatic-lime
+ * pre-emit critique: P4 H4 E4 S4 R4 V4
+ */
+
+:root {
+	--color-paper: oklch(8% 0.01 145);
+	--color-paper-2: oklch(12% 0.012 145);
+	--color-paper-3: oklch(14% 0.014 145);
+	--color-ink: oklch(95% 0.015 120);
+	--color-ink-2: oklch(72% 0.02 125);
+	--color-ink-faint: oklch(48% 0.015 145);
+	--color-rule: oklch(22% 0.015 145);
+	--color-accent: oklch(92% 0.21 120);
+	--color-accent-ink: oklch(12% 0.02 145);
+	--color-accent-hover: oklch(95% 0.18 120);
+	--color-focus: oklch(92% 0.21 120);
+	--color-ember: oklch(68% 0.18 40);
+	--color-bone: oklch(92% 0.02 95);
+	--color-gem-ember: oklch(68% 0.18 40);
+	--color-gem-steel: oklch(72% 0.06 220);
+	--color-gem-bone: oklch(92% 0.02 95);
+	--color-gem-oxide: oklch(58% 0.14 30);
+	--color-gem-gold: oklch(76% 0.1 80);
+
+	--font-display: "Big Shoulders Display", Impact, sans-serif;
+	--font-body: "Instrument Sans", ui-sans-serif, sans-serif;
+	--font-mono: "Fragment Mono", ui-monospace, monospace;
+
+	--space-3xs: 0.25rem;
+	--space-2xs: 0.5rem;
+	--space-xs: 0.75rem;
+	--space-sm: 1rem;
+	--space-md: 1.5rem;
+	--space-lg: 2rem;
+	--space-xl: 3rem;
+	--space-2xl: 4.5rem;
+	--space-3xl: 7rem;
+
+	--text-xs: 0.75rem;
+	--text-sm: 0.875rem;
+	--text-md: 1.125rem;
+	--text-lg: 1.375rem;
+	--text-xl: 1.75rem;
+	--text-2xl: 2.25rem;
+	--text-display: clamp(3.5rem, 12vw, 9rem);
+	--text-display-s: clamp(2.25rem, 6vw, 3.75rem);
+
+	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+	--dur-short: 150ms;
+	--dur-med: 220ms;
+	--radius-none: 0;
+	--max: 1180px;
+}

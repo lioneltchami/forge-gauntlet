@@ -2,34 +2,40 @@ import Image from "next/image";
 
 const GITHUB = "https://github.com/lioneltchami/forge-gauntlet";
 
-const STONES = [
+const STAGES = [
   {
-    gem: "lime",
+    n: "1.0",
+    stage: "1",
     name: "Bar",
-    copy: "Name a real reference. Vague AAA fails closed.",
+    copy: "Name a real reference the critic can fetch. Vague AAA fails closed.",
   },
   {
-    gem: "ember",
+    n: "2.0",
+    stage: "2",
     name: "Build",
-    copy: "Implementer writes artifacts. Orchestrator never codes.",
+    copy: "Implementer writes artifacts. Orchestrator never codes the piece.",
   },
   {
-    gem: "steel",
+    n: "3.0",
+    stage: "3",
     name: "Blind",
-    copy: "Fresh critic. Labels stripped. Binary pick.",
+    copy: "Fresh critic. Labels stripped. Binary pick — ours or the bar.",
   },
   {
-    gem: "bone",
+    n: "4.0",
+    stage: "4",
     name: "Gap",
-    copy: "One sentence. Feed only that back. Loop.",
+    copy: "One sentence only. Feed that back. Loop again.",
   },
   {
-    gem: "oxide",
+    n: "5.0",
+    stage: "5",
     name: "Smooth",
-    copy: "Integrated whole must cohere before done.",
+    copy: "Integrated whole must cohere before the run can close.",
   },
   {
-    gem: "gold",
+    n: "6.0",
+    stage: "6",
     name: "Win",
     copy: "Ours beats the bar — or you pull the brake.",
   },
@@ -48,8 +54,7 @@ export default function HomePage() {
           Forge Gauntlet
         </a>
         <nav className="nav-links" aria-label="Primary">
-          <a href="#stones">Six stones</a>
-          <a href="#method">Method</a>
+          <a href="#workflow">Workflow</a>
           <a href="#install">Install</a>
           <a href={GITHUB} target="_blank" rel="noreferrer">
             GitHub
@@ -65,109 +70,71 @@ export default function HomePage() {
             aria-label="Forged gauntlet in a dark workshop"
           />
           <div className="hero-inner">
-            <p className="eyebrow">Open quality ordeal · agent harness</p>
             <h1 className="brand">
               Forge
               <br />
-              <em>Gauntlet</em>
+              <span className="accent">Gauntlet</span>
             </h1>
             <p className="hero-line">
-              Six stones. One bar. Blind critic. Loop until yours wins — or you
+              Six stages. One bar. Blind critic. Loop until yours wins — or you
               stop.
             </p>
             <div className="cta-row">
               <a className="btn btn-primary" href="#install">
                 Don the runtime
               </a>
-              <a
-                className="btn btn-ghost"
-                href={GITHUB}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open the forge
+              <a className="btn btn-ghost" href="#workflow">
+                See the stages
               </a>
             </div>
             <p className="hero-meta">
-              Technique by Matt Shumer · Runtime by Forge Gauntlet · Original
-              forge mark
+              Technique by Matt Shumer · Open harness by Forge Gauntlet
             </p>
           </div>
         </section>
 
-        <section className="myth" id="stones">
-          <div className="section-inner">
-            <p className="kicker">The six stones</p>
-            <h2>Your mythology. Your loop.</h2>
-            <p className="lede">
-              Six hard gates of the quality ordeal. Miss one and the run stays
-              open.
-            </p>
-            <div className="stones">
-              {STONES.map((s) => (
-                <article key={s.name} className="stone" data-gem={s.gem}>
-                  <strong>{s.name}</strong>
-                  <p>{s.copy}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section id="method">
-          <div className="section-inner split">
-            <div>
-              <p className="kicker">The method</p>
-              <h2>Destination, not architecture</h2>
-              <p className="lede">
-                Give the agent a goal and a real bar it can fetch. Let it split
-                the work. Never let the builder grade itself. Keep looping — you
-                are the brake.
+        <section className="workflow" id="workflow">
+          <div className="workflow-inner">
+            <div className="workflow-intro">
+              <h2>How a run moves</h2>
+              <p>
+                Not six identical tiles — six hard gates in order. Miss one and
+                the run stays open.
               </p>
             </div>
-            <ol className="loop">
-              <li>
-                <div>
-                  <strong>Goal, not how</strong>
-                  <p>
-                    Destination only. Lead agent owns the route and the pieces.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <div>
-                  <strong>Real bar</strong>
-                  <p>
-                    Concrete reference to inspect — not “amazing” or
-                    “production-ready.”
-                  </p>
-                </div>
-              </li>
-              <li>
-                <div>
-                  <strong>Separate critic</strong>
-                  <p>
-                    Fresh context. Blind A/B when possible. One gap. No soft
-                    scores.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <div>
-                  <strong>Watch, don’t poke</strong>
-                  <p>
-                    Live ledger and workbench. Stop when it’s good enough — or
-                    budget hits.
-                  </p>
-                </div>
-              </li>
+            <ol className="stages">
+              {STAGES.map((s) => (
+                <li key={s.n} className="stage" data-stage={s.stage}>
+                  <div className="stage-num">{s.n}</div>
+                  <div className="stage-body">
+                    <h3>{s.name}</h3>
+                    <p>{s.copy}</p>
+                  </div>
+                  <div className="stage-mark" aria-hidden />
+                </li>
+              ))}
             </ol>
           </div>
         </section>
 
+        <section className="belief" id="belief">
+          <div className="belief-inner">
+            <h2>What we refuse</h2>
+            <ul className="claims">
+              <li>
+                Goal is the destination. Architecture belongs to the agent.
+              </li>
+              <li>The builder never grades its own work.</li>
+              <li>No fixed round count. You are the brake.</li>
+              <li>
+                Watch the ledger. Don’t poke the run every twenty minutes.
+              </li>
+            </ul>
+          </div>
+        </section>
+
         <section className="install" id="install">
-          <div className="section-inner">
-            <p className="kicker">Get it</p>
+          <div className="install-inner">
             <h2>Run it where your agents live</h2>
             <p className="lede">
               Open CLI + skill. You bring Claude Max / Codex / OpenRouter. We
@@ -196,6 +163,16 @@ export default function HomePage() {
                 ~/.cursor/skills/gauntlet
               </code>
             </pre>
+            <div className="install-cta">
+              <a
+                className="btn btn-primary"
+                href={GITHUB}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open the forge
+              </a>
+            </div>
             <p className="credit">
               Method documented by{" "}
               <a
@@ -223,12 +200,17 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer>
+      <footer className="site-footer">
         <div className="footer-inner">
-          <span>Forge Gauntlet · MIT</span>
-          <a href={GITHUB} target="_blank" rel="noreferrer">
-            github.com/lioneltchami/forge-gauntlet
-          </a>
+          <p className="footer-statement">
+            Keep the bar real. Keep the critic blind. Keep going until you stop.
+          </p>
+          <div className="footer-meta">
+            <span>Forge Gauntlet · MIT</span>
+            <a href={GITHUB} target="_blank" rel="noreferrer">
+              github.com/lioneltchami/forge-gauntlet
+            </a>
+          </div>
         </div>
       </footer>
     </>
